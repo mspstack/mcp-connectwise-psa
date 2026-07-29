@@ -77,7 +77,9 @@ export function createServer(config: ServerConfig, session: SessionIdentity): Mc
 
   const reg = new ToolRegistrar(server);
   for (const key of session.toolsets) {
-    TOOLSETS[key](reg, client);
+    // Each tool carries its toolset as _meta.group, so an aggregator can group
+    // and switch tools by capability. The tools themselves are unchanged.
+    TOOLSETS[key](reg.forToolset(key), client);
   }
 
   return server;
