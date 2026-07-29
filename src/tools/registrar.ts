@@ -33,7 +33,21 @@ type ToolResult = {
 
 /** Registers tools on an McpServer. */
 export class ToolRegistrar {
+  /**
+   * The toolset whose tools are being registered right now. It rides along as
+   * `_meta.group` on every tool so aggregators (the MSPStack gateway) can group
+   * and bulk-switch by capability — without parsing tool names or spending
+   * description tokens on a category prefix.
+   */
+  private group: string | undefined;
+
   constructor(private readonly server: McpServer) {}
+
+  /** Tag every tool registered after this call with its toolset. */
+  forToolset(group: string): this {
+    this.group = group;
+    return this;
+  }
 
   register<Args extends Record<string, unknown>>(
     spec: ToolSpec,
@@ -46,6 +60,7 @@ export class ToolRegistrar {
         description: spec.description,
         inputSchema: spec.inputSchema,
         annotations: spec.annotations,
+        ...(this.group ? { _meta: { group: this.group } } : {}),
       },
       handler as never
     );

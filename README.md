@@ -8,7 +8,7 @@ An MCP ([Model Context Protocol](https://modelcontextprotocol.io)) server for [C
 - **Configurations** — devices/assets with serials, IPs, OS, warranty (read-only)
 - **Dispatch** *(schedule)* — schedule entries (list/mine/create/reschedule/cancel), and **members with their timezone, working hours, and free-vs-booked availability**
 - **Invoicing** *(finance, read-only)* — invoices, agreements, and **unbilled billable time** ready to bill
-- **Toolsets & personas** — enable only what a session needs via the `x-cw-toolsets` header (or `CW_TOOLSETS`); presets `tech` / `dispatch` / `invoicing` / `all`. Default `tech` keeps the surface small
+- **Toolsets & personas** — enable only what a session needs via the `x-cw-toolsets` header (or `CW_TOOLSETS`); presets `tech` / `dispatch` / `invoicing` / `all`. Default `tech` keeps the surface small. Each tool also reports its toolset as `_meta.group`, so an aggregator (the MSPStack gateway) can group and switch tools by capability
 - **Per-member API keys (BYOK)** — each user supplies their own ConnectWise member keys; ConnectWise enforces that member's security role, and every write is attributed to the *actual person*
 - **Transports** — stdio for local use, streamable HTTP for shared deployments; Docker image included
 

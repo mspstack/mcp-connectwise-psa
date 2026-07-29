@@ -2,7 +2,7 @@
   "manifest_version": "0.3",
   "name": "mcp-connectwise-psa",
   "display_name": "ConnectWise PSA",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "description": "ConnectWise PSA (Manage) — tickets, time entries, companies, and configurations",
   "long_description": "MCP server for the ConnectWise PSA (Manage) REST API. Search and update tickets, log and review time entries, and look up companies and configurations — using your own ConnectWise API member keys, so everything is attributed to you.",
   "author": {
@@ -15,13 +15,22 @@
     "url": "https://github.com/mspstack/mcp-connectwise-psa"
   },
   "homepage": "https://github.com/mspstack/mcp-connectwise-psa",
-  "keywords": ["connectwise", "connectwise-manage", "psa", "msp", "tickets", "time-entries"],
+  "keywords": [
+    "connectwise",
+    "connectwise-manage",
+    "psa",
+    "msp",
+    "tickets",
+    "time-entries"
+  ],
   "server": {
     "type": "node",
     "entry_point": "dist/index.js",
     "mcp_config": {
       "command": "node",
-      "args": ["${__dirname}/dist/index.js"],
+      "args": [
+        "${__dirname}/dist/index.js"
+      ],
       "env": {
         "CW_SITE": "${user_config.cw_site}",
         "CW_COMPANY_ID": "${user_config.cw_company_id}",
@@ -73,7 +82,11 @@
     }
   },
   "compatibility": {
-    "platforms": ["darwin", "win32", "linux"],
+    "platforms": [
+      "darwin",
+      "win32",
+      "linux"
+    ],
     "runtimes": {
       "node": ">=20"
     }
