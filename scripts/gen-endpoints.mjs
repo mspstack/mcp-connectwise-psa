@@ -20,6 +20,7 @@ const METHODS = ["get", "post", "patch", "put", "delete"];
 // hints + the curated tool that wraps them. Overrides the auto summary so
 // lexical search stays strong on the endpoints people actually use.
 const ENRICH = {
+  "/system/audittrail": { summary: "Audit trail of ONE record — who changed what, when. Requires its own query params via cw_get's params argument: {\"type\":…,\"id\":…}.", keyParams: "params={\"type\":\"Ticket\",\"id\":123} — types (v2025.1): Ticket, Company, Contact, Agreement, Invoice, Time (time entries), Expense, PurchaseOrder, Project, Opportunity, Configuration", notes: "Per-record only (no global/member-wide query). Nonexistent id → 400, not 404." },
   "/service/tickets": { summary: "Service tickets — search, get, create, update.", keyParams: "company/id, board/name, status/name, closedFlag, summary, contact/id", commonFields: "id,summary,status/name,board/name,company/name,priority/name,owner/identifier", coveredBy: "cw_search_tickets, cw_get_ticket, cw_create_ticket, cw_update_ticket" },
   "/service/tickets/{id}/notes": { summary: "Ticket notes (discussion / internal / resolution).", coveredBy: "cw_add_ticket_note, cw_get_ticket" },
   "/service/tickets/{id}/tasks": { summary: "Ticket task / checklist items.", coveredBy: "cw_list_ticket_tasks" },

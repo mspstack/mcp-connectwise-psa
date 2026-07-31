@@ -4970,7 +4970,9 @@ export const CW_ENDPOINTS: EndpointDoc[] = [
     "module": "AuditTrail",
     "path": "/system/audittrail",
     "methods": "GET",
-    "summary": "Get List of AuditTrailEntry"
+    "summary": "Audit trail of ONE record — who changed what, when. Requires its own query params via cw_get's params argument: {\"type\":…,\"id\":…}.",
+    "keyParams": "params={\"type\":\"Ticket\",\"id\":123} — types (v2025.1): Ticket, Company, Contact, Agreement, Invoice, Time (time entries), Expense, PurchaseOrder, Project, Opportunity, Configuration",
+    "notes": "Per-record only (no global/member-wide query). Nonexistent id → 400, not 404."
   },
   {
     "module": "AuthAnvils",
