@@ -34,6 +34,60 @@ export function normalizeApiPath(raw: string): string {
   return s;
 }
 
+/** The inline query string of a raw path, when one was supplied ("" if none). */
+export function inlineQueryOf(raw: string): string {
+  const i = raw.indexOf("?");
+  return i >= 0 ? raw.slice(i + 1) : "";
+}
+
+/**
+ * Query keys owned by cw_get's own arguments (CW's list-query grammar plus the
+ * tool-level knobs), in every spelling a caller may plausibly use. Rejected in
+ * `params` so a value is never expressible two ways (issue #4).
+ */
+const RESERVED_PARAM_KEYS = new Map<string, string>([
+  ["conditions", "conditions"],
+  ["childconditions", "child_conditions"],
+  ["child_conditions", "child_conditions"],
+  ["customfieldconditions", "custom_field_conditions"],
+  ["custom_field_conditions", "custom_field_conditions"],
+  ["fields", "fields"],
+  ["orderby", "order_by"],
+  ["order_by", "order_by"],
+  ["page", "page_number"],
+  ["page_number", "page_number"],
+  ["pagesize", "page_size"],
+  ["page_size", "page_size"],
+  ["response_format", "response_format"],
+]);
+
+export type ExtraParamsResult =
+  | { ok: true; query: Record<string, string> }
+  | { ok: false; error: string };
+
+/**
+ * Validate + stringify caller-supplied extra query parameters (for endpoints
+ * with their own query grammar, e.g. /system/audittrail?type=&id=). Reserved
+ * keys are rejected with the name of the argument to use instead — never
+ * silently overridden. Pure — exported for tests.
+ */
+export function extraQueryParams(
+  params: Record<string, string | number | boolean> | undefined
+): ExtraParamsResult {
+  const query: Record<string, string> = {};
+  for (const [key, value] of Object.entries(params ?? {})) {
+    const ownArg = RESERVED_PARAM_KEYS.get(key.toLowerCase());
+    if (ownArg) {
+      return {
+        ok: false,
+        error: `params key "${key}" conflicts with the tool's own "${ownArg}" argument — pass it there instead of in params.`,
+      };
+    }
+    query[key] = String(value);
+  }
+  return { ok: true, query };
+}
+
 const STOP = new Set(["the", "a", "an", "of", "for", "to", "and", "or", "in", "on", "by", "with", "how", "do", "i", "get", "list", "all", "cw"]);
 
 function tokenize(s: string): string[] {
@@ -109,7 +163,9 @@ export function registerAdvancedTools(reg: ToolRegistrar, client: CWClient): voi
         "Read-only GET for any ConnectWise REST path (the part after /apis/3.0, e.g. /procurement/purchaseorders). " +
         "ALWAYS pass fields (CW records are huge). Filter with conditions (CW grammar: exact = for ids/names, " +
         "'contains' for text, dates as [2026-07-01T00:00:00Z]); filter on child collections (e.g. a company's " +
-        "types) with child_conditions; sort with order_by. Discover paths with cw_find_endpoint.",
+        "types) with child_conditions; sort with order_by. Endpoints with their OWN query parameters (e.g. " +
+        '/system/audittrail needs type+id, /system/documents needs recordType+recordId) take them via params: {"type":"Ticket","id":123}. ' +
+        "Discover paths with cw_find_endpoint.",
       inputSchema: {
         path: z.string().min(1).describe('Endpoint path after /apis/3.0, e.g. "/sales/opportunities" or "/procurement/catalog/741"'),
         fields: z.string().optional().describe("Comma-separated fields to return (strongly recommended)"),
@@ -120,6 +176,13 @@ export function registerAdvancedTools(reg: ToolRegistrar, client: CWClient): voi
           .describe('Filter on child-collection fields (CW rejects these in conditions), e.g. types/id=46 or types/name="MS Agreement"'),
         custom_field_conditions: z.string().optional().describe("Filter on custom fields, e.g. caption='Region' AND value='EU'"),
         order_by: z.string().optional().describe('Sort, e.g. "dateEntered desc"'),
+        params: z
+          .record(z.string(), z.union([z.string(), z.number(), z.boolean()]))
+          .optional()
+          .describe(
+            'Extra query-string parameters for endpoints with their own grammar, e.g. {"type":"Ticket","id":3873332} ' +
+              "for /system/audittrail. Keys already covered by the arguments above (conditions/fields/orderBy/page/pageSize…) are rejected."
+          ),
         page_number: pageNumberField,
         page_size: pageSizeField,
         response_format: responseFormatField,
@@ -133,11 +196,23 @@ export function registerAdvancedTools(reg: ToolRegistrar, client: CWClient): voi
       child_conditions?: string;
       custom_field_conditions?: string;
       order_by?: string;
+      params?: Record<string, string | number | boolean>;
       page_number: number;
       page_size: number;
       response_format: "markdown" | "json";
     }) => {
       try {
+        // A query string on the path used to be dropped silently — the exact
+        // confusion issue #4 documents. Point at `params` instead.
+        const inline = inlineQueryOf(args.path);
+        if (inline) {
+          return text(
+            `Error: query string on path ("?${inline}") is not sent — pass those as the params argument, ` +
+              `e.g. params={"type":"Ticket","id":123}.`
+          );
+        }
+        const extra = extraQueryParams(args.params);
+        if (!extra.ok) return text(`Error: ${extra.error}`);
         const path = normalizeApiPath(args.path);
         const result = await client.rawGet(path, {
           conditions: args.conditions,
@@ -147,6 +222,9 @@ export function registerAdvancedTools(reg: ToolRegistrar, client: CWClient): voi
           orderBy: args.order_by,
           page: args.page_number,
           pageSize: args.page_size,
+          // After the grammar keys (deterministic order); reserved keys were
+          // rejected above, so nothing here can shadow them.
+          ...extra.query,
         });
         const count = Array.isArray(result) ? `${result.length} record(s)` : "1 record";
         return text(clip(`GET ${path} — ${count}\n\n${json(result)}`, "Narrow with fields/conditions, or page through with page_number."));
