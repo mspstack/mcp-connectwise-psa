@@ -8,7 +8,7 @@ An MCP ([Model Context Protocol](https://modelcontextprotocol.io)) server for [C
 - **Configurations** — devices/assets with serials, IPs, OS, warranty (read-only)
 - **Dispatch** *(schedule)* — schedule entries (list/mine/create/reschedule/cancel), and **members with their timezone, working hours, and free-vs-booked availability**
 - **Invoicing** *(finance, read-only)* — invoices, agreements, and **unbilled billable time** ready to bill
-- **Toolsets & personas** — enable only what a session needs via the `x-cw-toolsets` header (or `CW_TOOLSETS`); presets `tech` / `dispatch` / `invoicing` / `all`. Default `tech` keeps the surface small. Each tool also reports its toolset as `_meta.group`, so an aggregator (the MSPStack gateway) can group and switch tools by capability
+- **Toolsets & personas** — enable only what a session needs via the `x-cw-toolsets` header (or `CW_TOOLSETS`); presets `tech` / `dispatch` / `invoicing` / `all`. Default is `all` — narrow it per session when a smaller surface is wanted. Each tool also reports its toolset as `_meta.group`, so an aggregator (the MSPStack gateway) can group and switch tools by capability
 - **Per-member API keys (BYOK)** — each user supplies their own ConnectWise member keys; ConnectWise enforces that member's security role, and every write is attributed to the *actual person*
 - **Transports** — stdio for local use, streamable HTTP for shared deployments; Docker image included
 
@@ -97,14 +97,14 @@ Tools are grouped into **toolsets** so a session only sees the capabilities it n
 
 **Presets** bundle keys per persona: `tech` = tickets + time + companies + configurations · `dispatch` = tickets + schedule + companies + configurations · `invoicing` = finance + time + companies · `all` = everything (incl. `advanced`).
 
-The **`advanced`** toolset is an opt-in escape hatch (not in any persona preset): `cw_find_endpoint` searches a bundled catalog of the whole ConnectWise API, and `cw_get` performs a read-only GET on any path — so an assistant can reach the long tail (procurement, sales, projects, system…) the curated tools don't wrap. Enable it explicitly (`x-cw-toolsets: advanced` or `all`).
+The **`advanced`** toolset is the escape hatch (in `all`, but in no persona preset): `cw_find_endpoint` searches a bundled catalog of the whole ConnectWise API, and `cw_get` performs a read-only GET on any path — so an assistant can reach the long tail (procurement, sales, projects, system…) the curated tools don't wrap. To drop it, name the keys or a persona preset instead (`x-cw-toolsets: tech`).
 
 Select toolsets with a comma list mixing keys and presets:
 
 - **HTTP** — the `x-cw-toolsets` header, per session: `x-cw-toolsets: dispatch` or `x-cw-toolsets: tech,finance`.
 - **stdio** — the `CW_TOOLSETS` env var or `--toolsets` flag: `CW_TOOLSETS=invoicing`.
 
-The **default is the `tech` preset** — the same tools this server exposed before toolsets existed, so nothing changes for existing clients until they opt in. Unknown keys in `CW_TOOLSETS`/`--toolsets` fail fast; unknown tokens in the `x-cw-toolsets` header are ignored. The only destructive tool is `cw_delete_schedule_entry` (dispatch); finance is read-only.
+The **default is the `all` preset** — every capability, including `advanced`; a client that wants a smaller surface names the keys or persona it needs. Unknown keys in `CW_TOOLSETS`/`--toolsets` fail fast; unknown tokens in the `x-cw-toolsets` header are ignored. The only destructive tool is `cw_delete_schedule_entry` (dispatch); finance is read-only.
 
 ## Configuration reference
 
@@ -116,7 +116,7 @@ The **default is the `tech` preset** — the same tools this server exposed befo
 | `CW_PUBLIC_KEY` / `CW_PRIVATE_KEY` | — | API member keys — required for stdio; unused on HTTP (BYOK) |
 | `CW_MEMBER_IDENTIFIER` | — | Member the stdio keys belong to (my-tickets/my-time) |
 | `TRANSPORT` / `PORT` | `stdio` / `3000` | Transport selection |
-| `CW_TOOLSETS` | `tech` | Enabled toolsets (keys/presets); HTTP overrides per session via `x-cw-toolsets` |
+| `CW_TOOLSETS` | `all` | Enabled toolsets (keys/presets); HTTP overrides per session via `x-cw-toolsets` |
 
 ## Notes & limits
 

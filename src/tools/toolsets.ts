@@ -2,7 +2,7 @@
  * Toolsets — capability groups that can be enabled per session.
  *
  * A session exposes only the tools in its selected toolsets, so a dispatcher
- * or a billing user isn't shown the full technician surface. Selection comes
+ * or a billing user can be narrowed to their slice of the surface. Selection comes
  * from the `x-cw-toolsets` header (HTTP) or the `CW_TOOLSETS` env / `--toolsets`
  * flag (stdio); both accept a comma-separated list mixing capability keys and
  * persona presets. This is a surface/usability filter, not access control —
@@ -31,8 +31,12 @@ export const PRESETS: Record<string, ToolsetKey[]> = {
   all: [...TOOLSET_KEYS],
 };
 
-/** The default selection when nothing is specified — today's technician surface. */
-export const DEFAULT_TOOLSETS: ToolsetKey[] = TECH;
+/**
+ * The default selection when nothing is specified — the full surface, including
+ * `advanced`. A session narrows it (`x-cw-toolsets` / `CW_TOOLSETS`) rather than
+ * having to opt in; ConnectWise still enforces the member's security role.
+ */
+export const DEFAULT_TOOLSETS: ToolsetKey[] = [...TOOLSET_KEYS];
 
 const KEY_SET = new Set<string>(TOOLSET_KEYS);
 

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ConfigError, loadConfig, normalizeSite } from "./config.js";
+import { TOOLSET_KEYS } from "./tools/toolsets.js";
 
 const baseEnv = {
   CW_SITE: "support.example.com",
@@ -50,9 +51,9 @@ describe("loadConfig", () => {
     expect(() => loadConfig(["--transport", "http"], { CW_SITE: "x", CW_COMPANY_ID: "a" } as NodeJS.ProcessEnv)).toThrow(ConfigError);
   });
 
-  it("defaults toolsets to the tech preset (backward compatible)", () => {
+  it("defaults toolsets to the all preset (every capability, incl. advanced)", () => {
     const config = loadConfig(["--transport", "http"], baseEnv);
-    expect(config.toolsets).toEqual(["tickets", "time", "companies", "configurations"]);
+    expect(config.toolsets).toEqual([...TOOLSET_KEYS]);
   });
 
   it("parses CW_TOOLSETS (keys and presets)", () => {

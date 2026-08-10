@@ -14,7 +14,7 @@
  *   TRANSPORT             stdio | http (default: stdio)
  *   PORT                  HTTP port (default: 3000)
  *   CW_TOOLSETS           Comma list of toolset keys/presets to expose (default:
- *                         the "tech" preset). HTTP sessions may override per
+ *                         the "all" preset). HTTP sessions may override per
  *                         request via the x-cw-toolsets header.
  *
  * Access model: stdio uses the server-wide keys above (single local user). HTTP

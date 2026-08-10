@@ -1,12 +1,12 @@
 /**
- * Advanced (opt-in) toolset — an escape hatch for the long tail of the
- * ConnectWise API that the curated tools don't wrap.
+ * Advanced toolset — an escape hatch for the long tail of the ConnectWise API
+ * that the curated tools don't wrap.
  *
  *  - cw_find_endpoint: lexical search over a curated endpoint catalog.
  *  - cw_get: read-only GET passthrough for any endpoint.
  *
- * Not part of the tech/dispatch/invoicing presets — enable with
- * `x-cw-toolsets: advanced` (or `all`). Read-only for now.
+ * In the default `all` selection, but in no persona preset — a session that
+ * picks tech/dispatch/invoicing drops it. Read-only for now.
  */
 
 import { z } from "zod";
