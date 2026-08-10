@@ -1,16 +1,18 @@
 name: Publish to MCP registry
 
 # Publishes server.json to registry.modelcontextprotocol.io via GitHub OIDC —
-# no interactive login or secrets needed. Runs whenever server.json changes on
-# main (i.e. version bumps); the npm package for that version must already be
-# live, since the registry validates the tarball's mcpName.
+# no interactive login or secrets needed.
+#
+# Runs *after* a successful Release, never on the main push that bumps the
+# version: the registry validates that the npm version named in server.json is
+# actually on npm, and npm publish happens inside Release (on the tag). Chaining
+# off the version-bump push therefore failed every release with
+# "NPM package … version 'X.Y.Z' was not found".
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - server.json
-      - .github/workflows/mcp-registry-publish.yml
+  workflow_run:
+    workflows: [Release]
+    types: [completed]
 
 permissions:
   contents: read
@@ -18,34 +20,63 @@ permissions:
 
 jobs:
   publish:
+    # A failed Release means npm may not have the version — don't chain off it.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+        with:
+          # workflow_run checks out the default branch by default; take the
+          # commit Release actually built so server.json is the released one.
+          ref: ${{ github.event.workflow_run.head_sha || github.ref }}
 
       - name: Install mcp-publisher
         run: |
           curl -sL "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/').tar.gz" | tar xz mcp-publisher
 
+      # The registry rejects a version npm can't confirm yet, and a fresh
+      # publish takes a moment to become visible.
+      - name: Wait for npm
+        run: |
+          pkg=$(node -p "require('./server.json').packages[0].identifier")
+          version=$(node -p "require('./server.json').version")
+          for attempt in $(seq 1 20); do
+            if npm view "$pkg@$version" version >/dev/null 2>&1; then
+              echo "$pkg@$version is on npm"
+              exit 0
+            fi
+            echo "attempt $attempt: $pkg@$version not on npm yet — waiting"
+            sleep 15
+          done
+          echo "::error::$pkg@$version never appeared on npm; publish it, then re-run this workflow"
+          exit 1
+
       # Skip when this exact version is already in the registry (e.g. it was
       # published manually) — mirrors the npm-publish skip in release.yml.
       - name: Publish
         run: |
-          name=$(node -p "require('./server.json').name")
           version=$(node -p "require('./server.json').version")
-          live=$(curl -s "https://registry.modelcontextprotocol.io/v0/servers?search=$name&version=latest" \
-            | node -p "JSON.parse(require('fs').readFileSync(0)).servers.map(s => s.version ?? s.server?.version).join(',')")
-          if [ "$live" = "$version" ]; then
-            echo "$name@$version is already in the registry — skipping publish"
+          if [ "$(node scripts/registry-version.mjs)" = "$version" ]; then
+            echo "$version is already in the registry — skipping publish"
             exit 0
           fi
           ./mcp-publisher login github-oidc
           ./mcp-publisher publish
 
+      # The registry's search index is eventually consistent — asserting once
+      # right after publish reads the previous version back.
       - name: Verify
         run: |
-          name=$(node -p "require('./server.json').name")
           version=$(node -p "require('./server.json').version")
-          listed=$(curl -s "https://registry.modelcontextprotocol.io/v0/servers?search=$name&version=latest" \
-            | node -p "JSON.parse(require('fs').readFileSync(0)).servers.map(s => s.version ?? s.server?.version).join(',')")
-          echo "registry has: $listed (want $version)"
-          [ "$listed" = "$version" ]
+          for attempt in $(seq 1 10); do
+            listed=$(node scripts/registry-version.mjs)
+            echo "attempt $attempt: registry has '$listed' (want $version)"
+            if [ "$listed" = "$version" ]; then
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "::error::registry still doesn't list $version"
+          exit 1
