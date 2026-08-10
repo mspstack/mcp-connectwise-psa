@@ -2,7 +2,7 @@
   "manifest_version": "0.3",
   "name": "mcp-connectwise-psa",
   "display_name": "ConnectWise PSA",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "ConnectWise PSA (Manage) — tickets, time entries, companies, and configurations",
   "long_description": "MCP server for the ConnectWise PSA (Manage) REST API. Search and update tickets, log and review time entries, and look up companies and configurations — using your own ConnectWise API member keys, so everything is attributed to you.",
   "author": {
