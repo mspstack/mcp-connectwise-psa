@@ -9,8 +9,10 @@ function makeRequest(headers: Record<string, string>): Request {
   return { headers: lowered } as unknown as Request;
 }
 
-const configWithToolsets = (toolsets: ServerConfig["toolsets"]): ServerConfig =>
-  ({ toolsets }) as ServerConfig;
+const configWithToolsets = (
+  toolsets: ServerConfig["toolsets"],
+  db?: ServerConfig["db"]
+): ServerConfig => ({ toolsets, db }) as ServerConfig;
 
 describe("resolveAuth (BYOK)", () => {
   it("binds the member keys and derives a stable label + hash", () => {
@@ -85,5 +87,40 @@ describe("sessionToolsets", () => {
       "finance",
     ]);
     spy.mockRestore();
+  });
+});
+
+describe("sessionToolsets and the database-backed sql toolset", () => {
+  const withoutDb = configWithToolsets(["tickets", "time"]);
+  const withDb = configWithToolsets(["tickets", "time"], {
+    database: "cwwebapp_acme",
+  } as ServerConfig["db"]);
+
+  it("drops sql, with a warning, when no database is configured", () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    expect(sessionToolsets(makeRequest({ "x-cw-toolsets": "tickets,sql" }), withoutDb)).toEqual([
+      "tickets",
+    ]);
+    expect(spy).toHaveBeenCalledOnce();
+    spy.mockRestore();
+  });
+
+  it("keeps sql when the server has a database", () => {
+    expect(sessionToolsets(makeRequest({ "x-cw-toolsets": "tickets,sql" }), withDb)).toEqual([
+      "tickets",
+      "sql",
+    ]);
+  });
+
+  it("falls back rather than leaving a session with no tools at all", () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    expect(sessionToolsets(makeRequest({ "x-cw-toolsets": "sql" }), withoutDb)).toEqual(
+      withoutDb.toolsets
+    );
+    spy.mockRestore();
+  });
+
+  it("never adds sql implicitly", () => {
+    expect(sessionToolsets(makeRequest({}), withDb)).toEqual(withDb.toolsets);
   });
 });

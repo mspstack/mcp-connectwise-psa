@@ -1,10 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   DEFAULT_TOOLSETS,
+  OPT_IN_TOOLSET_KEYS,
   PRESETS,
   resolveToolsets,
   TOOLSET_KEYS,
   UnknownToolsetError,
+  withoutDbToolsets,
 } from "./toolsets.js";
 
 const FALLBACK = DEFAULT_TOOLSETS;
@@ -22,7 +24,7 @@ describe("resolveToolsets", () => {
 
   it("expands presets", () => {
     expect(resolveToolsets("dispatch", FALLBACK)).toEqual(PRESETS.dispatch);
-    expect(resolveToolsets("all", FALLBACK)).toEqual([...TOOLSET_KEYS]);
+    expect(resolveToolsets("all", FALLBACK)).toEqual(PRESETS.all);
   });
 
   it("mixes presets and keys, deduping across them", () => {
@@ -61,5 +63,37 @@ describe("resolveToolsets", () => {
     const spy = vi.spyOn(console, "error").mockImplementation(() => {});
     expect(resolveToolsets("bogus,nonsense", FALLBACK, "warn")).toEqual(FALLBACK);
     spy.mockRestore();
+  });
+});
+
+describe("opt-in toolsets", () => {
+  it("keeps sql out of the all preset and the default selection", () => {
+    expect(PRESETS.all).not.toContain("sql");
+    expect(DEFAULT_TOOLSETS).not.toContain("sql");
+    expect(PRESETS.all).toEqual(TOOLSET_KEYS.filter((key) => key !== "sql"));
+  });
+
+  it("resolves sql only when it is named explicitly", () => {
+    expect(resolveToolsets("sql", FALLBACK)).toEqual(["sql"]);
+    expect(resolveToolsets("all,sql", FALLBACK)).toEqual([...PRESETS.all, "sql"]);
+    expect(resolveToolsets("tech,sql", FALLBACK)).toEqual([...PRESETS.tech, "sql"]);
+    expect(resolveToolsets("sql,all,sql", FALLBACK)).toEqual(["sql", ...PRESETS.all]);
+  });
+
+  it("never hides an opt-in key inside a preset", () => {
+    for (const key of OPT_IN_TOOLSET_KEYS) {
+      expect(TOOLSET_KEYS).toContain(key);
+      for (const [name, keys] of Object.entries(PRESETS)) {
+        expect(keys, `preset "${name}" must not include the opt-in key "${key}"`).not.toContain(key);
+      }
+    }
+  });
+});
+
+describe("withoutDbToolsets", () => {
+  it("drops database-backed keys and preserves the rest in order", () => {
+    expect(withoutDbToolsets(["tickets", "sql", "finance"])).toEqual(["tickets", "finance"]);
+    expect(withoutDbToolsets(["tickets", "finance"])).toEqual(["tickets", "finance"]);
+    expect(withoutDbToolsets(["sql"])).toEqual([]);
   });
 });

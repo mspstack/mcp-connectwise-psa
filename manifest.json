@@ -37,7 +37,13 @@
         "CW_CLIENT_ID": "${user_config.cw_client_id}",
         "CW_PUBLIC_KEY": "${user_config.cw_public_key}",
         "CW_PRIVATE_KEY": "${user_config.cw_private_key}",
-        "CW_MEMBER_IDENTIFIER": "${user_config.cw_member_identifier}"
+        "CW_MEMBER_IDENTIFIER": "${user_config.cw_member_identifier}",
+        "CW_TOOLSETS": "${user_config.cw_toolsets}",
+        "CW_DB_HOST": "${user_config.cw_db_host}",
+        "CW_DB_NAME": "${user_config.cw_db_name}",
+        "CW_DB_USER": "${user_config.cw_db_user}",
+        "CW_DB_PASSWORD": "${user_config.cw_db_password}",
+        "CW_DB_QUERY_LIBRARY": "${user_config.cw_db_query_library}"
       }
     }
   },
@@ -78,6 +84,43 @@
       "type": "string",
       "title": "Member identifier (optional)",
       "description": "Your ConnectWise member id — enables \"my tickets\" and \"my time\" tools on older on-prem versions",
+      "required": false
+    },
+    "cw_toolsets": {
+      "type": "string",
+      "title": "Toolsets (optional)",
+      "description": "Comma list of toolsets or presets (default: all). Add \"sql\" to enable read-only database queries. An unknown name stops the server from starting.",
+      "required": false
+    },
+    "cw_db_host": {
+      "type": "string",
+      "title": "Database host (optional, on-prem only)",
+      "description": "ConnectWise SQL Server host, or host\\INSTANCE. Enables the sql toolset; requires the database, user and password below.",
+      "required": false
+    },
+    "cw_db_name": {
+      "type": "string",
+      "title": "Database name (optional)",
+      "description": "ConnectWise Manage database, e.g. cwwebapp_acme",
+      "required": false
+    },
+    "cw_db_user": {
+      "type": "string",
+      "title": "Database login (optional)",
+      "description": "Dedicated read-only login (db_datareader) — never the ConnectWise application login",
+      "required": false
+    },
+    "cw_db_password": {
+      "type": "string",
+      "title": "Database password (optional)",
+      "description": "Password for the read-only database login",
+      "required": false,
+      "sensitive": true
+    },
+    "cw_db_query_library": {
+      "type": "string",
+      "title": "Saved-query file (optional)",
+      "description": "Path to a writable JSON file for saved SQL queries. Without it the built-in queries are read-only.",
       "required": false
     }
   },

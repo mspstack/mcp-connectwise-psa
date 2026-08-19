@@ -35,8 +35,15 @@ export function text(value: string): ToolResult {
   return { content: [{ type: "text", text: value }] };
 }
 
-export function failure(error: unknown): ToolResult {
-  return { content: [{ type: "text", text: describeError(error) }], isError: true };
+/**
+ * An error result. `describe` defaults to the ConnectWise REST mapping; the
+ * database tools pass their own, since a driver error has no HTTP status.
+ */
+export function failure(
+  error: unknown,
+  describe: (error: unknown) => string = describeError
+): ToolResult {
+  return { content: [{ type: "text", text: describe(error) }], isError: true };
 }
 
 export function json(value: unknown): string {

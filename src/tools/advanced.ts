@@ -13,6 +13,7 @@ import { z } from "zod";
 import type { ToolRegistrar } from "./registrar.js";
 import type { CWClient } from "../cw/client.js";
 import { CW_ENDPOINTS, type EndpointDoc } from "../reference/cw-endpoints.js";
+import { lexicalRank } from "../reference/search.js";
 import {
   clip,
   failure,
@@ -88,38 +89,18 @@ export function extraQueryParams(
   return { ok: true, query };
 }
 
-const STOP = new Set(["the", "a", "an", "of", "for", "to", "and", "or", "in", "on", "by", "with", "how", "do", "i", "get", "list", "all", "cw"]);
-
-function tokenize(s: string): string[] {
-  return s
-    .toLowerCase()
-    .split(/[^a-z0-9]+/)
-    .filter((t) => t.length > 1 && !STOP.has(t));
-}
-
-/** Lexical relevance score of an endpoint for a set of query tokens. */
-function scoreEndpoint(doc: EndpointDoc, tokens: string[]): number {
-  const strong = `${doc.path} ${doc.summary}`.toLowerCase();
-  const medium = `${doc.module} ${doc.keyParams ?? ""} ${doc.commonFields ?? ""}`.toLowerCase();
-  const weak = `${doc.notes ?? ""} ${doc.coveredBy ?? ""}`.toLowerCase();
-  let score = 0;
-  for (const t of tokens) {
-    if (strong.includes(t)) score += 3;
-    else if (medium.includes(t)) score += 2;
-    else if (weak.includes(t)) score += 1;
-  }
-  return score;
-}
-
 /** Rank the catalog for a query. Pure — exported for tests. */
 export function findEndpoints(query: string, topK = 5): EndpointDoc[] {
-  const tokens = tokenize(query);
-  if (tokens.length === 0) return [];
-  return CW_ENDPOINTS.map((doc) => ({ doc, score: scoreEndpoint(doc, tokens) }))
-    .filter((r) => r.score > 0)
-    .sort((a, b) => b.score - a.score)
-    .slice(0, topK)
-    .map((r) => r.doc);
+  return lexicalRank(
+    CW_ENDPOINTS,
+    query,
+    (doc) => ({
+      strong: `${doc.path} ${doc.summary}`,
+      medium: `${doc.module} ${doc.keyParams ?? ""} ${doc.commonFields ?? ""}`,
+      weak: `${doc.notes ?? ""} ${doc.coveredBy ?? ""}`,
+    }),
+    { topK }
+  );
 }
 
 function endpointBlock(d: EndpointDoc): string {

@@ -55,6 +55,42 @@
           "description": "Member identifier the API keys belong to — enables \"my tickets\"/\"my time\" tools",
           "isRequired": false,
           "isSecret": false
+        },
+        {
+          "name": "CW_TOOLSETS",
+          "description": "Comma list of toolsets/presets (default: all). Add sql for database queries.",
+          "isRequired": false,
+          "isSecret": false
+        },
+        {
+          "name": "CW_DB_HOST",
+          "description": "ConnectWise SQL Server host (on-prem only) — enables the opt-in sql toolset",
+          "isRequired": false,
+          "isSecret": false
+        },
+        {
+          "name": "CW_DB_NAME",
+          "description": "ConnectWise Manage database, e.g. cwwebapp_acme",
+          "isRequired": false,
+          "isSecret": false
+        },
+        {
+          "name": "CW_DB_USER",
+          "description": "Dedicated read-only database login (db_datareader)",
+          "isRequired": false,
+          "isSecret": false
+        },
+        {
+          "name": "CW_DB_PASSWORD",
+          "description": "Password for the read-only database login",
+          "isRequired": false,
+          "isSecret": true
+        },
+        {
+          "name": "CW_DB_QUERY_LIBRARY",
+          "description": "Path to a writable JSON file holding saved SQL queries",
+          "isRequired": false,
+          "isSecret": false
         }
       ]
     }

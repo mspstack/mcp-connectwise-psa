@@ -6,6 +6,12 @@
  * (its own, via BYOK, or the server-wide keys on stdio), and ConnectWise
  * enforces that member's security role server-side. The MCP server exposes the
  * full tool surface and lets the CW API be the access control.
+ *
+ * The `sql` toolset is the exception: it reads the ConnectWise database directly
+ * through a server-wide read-only login, not the session member's API keys — so
+ * its results are not attributed to a member and are not filtered by that
+ * member's ConnectWise security role. It is opt-in for that reason: never in
+ * `all`, never in a preset, and unregistered unless CW_DB_* is configured.
  */
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -41,7 +47,15 @@ export class ToolRegistrar {
    */
   private group: string | undefined;
 
-  constructor(private readonly server: McpServer) {}
+  /**
+   * Label of the session these tools belong to ("stdio" or "byok:…"). Tools
+   * that write outside ConnectWise — the query library — stamp it, so a saved
+   * row can be traced back to who saved it.
+   */
+  constructor(
+    private readonly server: McpServer,
+    readonly sessionLabel = "session"
+  ) {}
 
   /** Tag every tool registered after this call with its toolset. */
   forToolset(group: string): this {
