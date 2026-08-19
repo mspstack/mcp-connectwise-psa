@@ -179,7 +179,19 @@ export const CW_DB_TABLES: TableDoc[] = [
     "keyColumns": "Member_RecID int, Member_ID nvarchar, First_Name nvarchar, Last_Name nvarchar, Title nvarchar, Email_Address nvarchar, Inactive_Flag bit, Daily_Capacity decimal, Reports_To int, Member_Type_RecID int, Owner_Level_RecID int, SR_Billing_Unit_RecID int",
     "joins": "Reports_To → Member; Member_Type_RecID → Member_Type",
     "coveredBy": "cw_list_members, cw_get_member",
-    "notes": "Member_ID is the login identifier (e.g. jsmith) that time and ticket rows reference by string. Credential columns are denied to the reporting login, so SELECT * on this table fails — name your columns."
+    "notes": "Member_ID is the login identifier (e.g. jsmith) that time and ticket rows reference by string. Credentials are NOT here — they live in Member_Api_Key and Member_SSO_Settings, which a correctly configured reporting login cannot read. This table does carry compensation (Hourly_Cost, Hourly_Rate), so treat it as sensitive."
+  },
+  {
+    "schema": "dbo",
+    "name": "Member_Api_Key",
+    "purpose": "Per-member API keys. A reporting login should have its key columns denied — expect SELECT to fail here, and do not try to work around it.",
+    "joins": "Member_RecID → Member"
+  },
+  {
+    "schema": "dbo",
+    "name": "Member_SSO_Settings",
+    "purpose": "Per-member SSO secrets. Denied to a reporting login, like Member_Api_Key.",
+    "joins": "Member_RecID → Member"
   },
   {
     "schema": "dbo",

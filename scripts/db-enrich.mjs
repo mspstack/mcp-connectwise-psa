@@ -257,9 +257,18 @@ export const ENRICH = {
     joins: "Reports_To → Member; Member_Type_RecID → Member_Type",
     coveredBy: "cw_list_members, cw_get_member",
     notes:
-      "Member_ID is the login identifier (e.g. jsmith) that time and ticket rows reference by string. Credential columns are denied to the reporting login, so SELECT * on this table fails — name your columns.",
+      "Member_ID is the login identifier (e.g. jsmith) that time and ticket rows reference by string. Credentials are NOT here — they live in Member_Api_Key and Member_SSO_Settings, which a correctly configured reporting login cannot read. This table does carry compensation (Hourly_Cost, Hourly_Rate), so treat it as sensitive.",
   },
   Member_Type: { purpose: "Member types (Full, API, Contractor …)." },
+  Member_Api_Key: {
+    purpose:
+      "Per-member API keys. A reporting login should have its key columns denied — expect SELECT to fail here, and do not try to work around it.",
+    joins: "Member_RecID → Member",
+  },
+  Member_SSO_Settings: {
+    purpose: "Per-member SSO secrets. Denied to a reporting login, like Member_Api_Key.",
+    joins: "Member_RecID → Member",
+  },
   Time_Entry: {
     purpose: "Time entries, base table. Prefer v_rpt_time unless you need a raw key.",
     pk: "Time_RecID",
