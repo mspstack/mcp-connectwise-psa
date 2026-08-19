@@ -105,7 +105,8 @@ export const ENRICH = {
       "Config_RecID int, Config_Name nvarchar, Company_Name nvarchar, Config_Type nvarchar, ConfigStatus nvarchar, Manufacturer nvarchar, Serial_Number nvarchar, Model_Number nvarchar, Tag_Number nvarchar, Contact_Name nvarchar, Location nvarchar, DeviceID nvarchar, LastLogin datetime, Date_Purchased datetime, Date_Installed datetime, Date_Expiration datetime",
     joins: "Config_RecID → Config",
     coveredBy: "cw_list_configurations, cw_get_configuration",
-    notes: "Date_Expiration is the warranty/expiry date used for refresh reporting.",
+    notes:
+      "Date_Expiration is the warranty/expiry date used for refresh reporting. Emits ONE ROW PER config-type question (2-38 rows per config, live-verified) — SELECT DISTINCT when listing, and never join ticket/aggregate queries through it (counts multiply); join the bare Config table instead.",
   },
   v_rpt_project: {
     keywords: "projects phases",
@@ -199,6 +200,8 @@ export const ENRICH = {
   SR_Config: {
     purpose: "Ticket ↔ configuration links — which devices a ticket is about.",
     joins: "SR_Service_RecID → SR_Service; Config_RecID → Config",
+    notes:
+      "One row per link (live-verified clean — COUNT(*) equals COUNT(DISTINCT SR_Service_RecID)). Scope by company via Config.Company_RecID, which equals the REST company id; do NOT join v_rpt_configuration here (row multiplication).",
   },
   SR_SLA: {
     purpose: "SLA definitions with response, resolution-plan and resolution hour targets.",
