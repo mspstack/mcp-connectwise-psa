@@ -1,6 +1,6 @@
 {
   "name": "mcp-connectwise-psa",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "MCP server for ConnectWise PSA (Manage) — tickets, time entries, companies, and configurations for technicians, with per-tech API keys (BYOK) so writes are attributed to the real member",
   "mcpName": "io.github.mspstack/mcp-connectwise-psa",
   "type": "module",
