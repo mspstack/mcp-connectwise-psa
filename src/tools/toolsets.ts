@@ -10,7 +10,9 @@
  *
  * Exception: the `sql` toolset reads the ConnectWise database through a
  * server-wide read-only login — no member attribution, no CW security-role
- * filtering. See `OPT_IN_TOOLSET_KEYS`.
+ * filtering. It is an ordinary key, so `all` and the default include it; what
+ * gates database access is whether the server has `CW_DB_*` configured at all.
+ * See `DB_TOOLSETS`.
  */
 
 export const TOOLSET_KEYS = [
@@ -27,19 +29,13 @@ export const TOOLSET_KEYS = [
 export type ToolsetKey = (typeof TOOLSET_KEYS)[number];
 
 /**
- * Toolsets a session must name explicitly. They are excluded from `all` and
- * from the default selection, so no client is handed one by accident: `sql`
- * reads the ConnectWise database directly through a server-wide read-only
- * login, not the session member's API keys — so its results are not attributed
- * to a member and are not filtered by that member's ConnectWise security role.
+ * Toolsets backed by the ConnectWise database rather than the CW REST API.
+ *
+ * These register only when the server has `CW_DB_*` configured — that, not the
+ * toolset list, is what decides whether database access exists at all. A server
+ * without a database prunes them from whatever selection asked for them.
  */
-export const OPT_IN_TOOLSET_KEYS: ReadonlySet<ToolsetKey> = new Set<ToolsetKey>(["sql"]);
-
-/** Toolsets backed by the ConnectWise database rather than the CW REST API. */
 export const DB_TOOLSETS: readonly ToolsetKey[] = ["sql"];
-
-/** Every key that is not opt-in — what `all` and the default expand to. */
-const BROAD: ToolsetKey[] = TOOLSET_KEYS.filter((key) => !OPT_IN_TOOLSET_KEYS.has(key));
 
 const TECH: ToolsetKey[] = ["tickets", "time", "companies", "configurations"];
 
@@ -48,15 +44,16 @@ export const PRESETS: Record<string, ToolsetKey[]> = {
   tech: TECH,
   dispatch: ["tickets", "schedule", "companies", "configurations"],
   invoicing: ["finance", "time", "companies"],
-  all: BROAD,
+  all: [...TOOLSET_KEYS],
 };
 
 /**
- * The default selection when nothing is specified — the full surface except the
- * opt-in toolsets. A session narrows it (`x-cw-toolsets` / `CW_TOOLSETS`) rather
- * than having to opt in; ConnectWise still enforces the member's security role.
+ * The default selection when nothing is specified — every capability the server
+ * is configured for. A session narrows it (`x-cw-toolsets` / `CW_TOOLSETS`)
+ * rather than having to opt in; ConnectWise still enforces the member's security
+ * role, with the database exception noted at the top of this file.
  */
-export const DEFAULT_TOOLSETS: ToolsetKey[] = [...BROAD];
+export const DEFAULT_TOOLSETS: ToolsetKey[] = [...TOOLSET_KEYS];
 
 /** Drop the database-backed toolsets from a selection — the no-database path. */
 export function withoutDbToolsets(keys: ToolsetKey[]): ToolsetKey[] {

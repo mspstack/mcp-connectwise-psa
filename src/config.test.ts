@@ -8,7 +8,7 @@ import {
   parseDbHost,
   parseIntEnv,
 } from "./config.js";
-import { PRESETS } from "./tools/toolsets.js";
+import { PRESETS, withoutDbToolsets } from "./tools/toolsets.js";
 
 const baseEnv = {
   CW_SITE: "support.example.com",
@@ -59,9 +59,9 @@ describe("loadConfig", () => {
     expect(() => loadConfig(["--transport", "http"], { CW_SITE: "x", CW_COMPANY_ID: "a" } as NodeJS.ProcessEnv)).toThrow(ConfigError);
   });
 
-  it("defaults toolsets to the all preset (everything except the opt-in sql)", () => {
+  it("defaults to every toolset, pruning the database one when there is no database", () => {
     const config = loadConfig(["--transport", "http"], baseEnv);
-    expect(config.toolsets).toEqual(PRESETS.all);
+    expect(config.toolsets).toEqual(withoutDbToolsets(PRESETS.all));
     expect(config.toolsets).not.toContain("sql");
   });
 
@@ -176,7 +176,7 @@ describe("loadConfig + the sql toolset", () => {
     expect(loadConfig(["--transport", "http"], baseEnv).db).toBeUndefined();
   });
 
-  it("rejects the sql toolset without a database", () => {
+  it("rejects sql only when it is named outright and there is no database", () => {
     expect(() =>
       loadConfig(["--transport", "http"], { ...baseEnv, CW_TOOLSETS: "all,sql" })
     ).toThrow(/CW_DB_HOST/);
@@ -185,19 +185,28 @@ describe("loadConfig + the sql toolset", () => {
     ).toThrow(ConfigError);
   });
 
-  it("allows the sql toolset once the database is configured", () => {
+  it("does not fail a database-less server over a selection it never asked for", () => {
+    // `all` and the default both include sql now; pruning must be silent, or
+    // every existing deployment without a database would stop starting.
+    for (const raw of [undefined, "all", "tech,finance"]) {
+      const env = raw === undefined ? baseEnv : { ...baseEnv, CW_TOOLSETS: raw };
+      const config = loadConfig(["--transport", "http"], env);
+      expect(config.toolsets, `CW_TOOLSETS=${raw}`).not.toContain("sql");
+    }
+  });
+
+  it("includes sql once the database is configured, without being asked", () => {
+    const config = loadConfig(["--transport", "http"], { ...baseEnv, ...dbEnv });
+    expect(config.db).toMatchObject({ database: "cwwebapp_acme" });
+    expect(config.toolsets).toContain("sql");
+  });
+
+  it("still lets a session narrow away from sql", () => {
     const config = loadConfig(["--transport", "http"], {
       ...baseEnv,
       ...dbEnv,
-      CW_TOOLSETS: "all,sql",
+      CW_TOOLSETS: "tech",
     });
-    expect(config.toolsets).toContain("sql");
-    expect(config.db).toMatchObject({ database: "cwwebapp_acme" });
-  });
-
-  it("keeps a configured database dormant until a session asks for sql", () => {
-    const config = loadConfig(["--transport", "http"], { ...baseEnv, ...dbEnv });
-    expect(config.db).toBeDefined();
-    expect(config.toolsets).not.toContain("sql");
+    expect(config.toolsets).toEqual(PRESETS.tech);
   });
 });

@@ -10,8 +10,9 @@
  * The `sql` toolset is the exception: it reads the ConnectWise database directly
  * through a server-wide read-only login, not the session member's API keys — so
  * its results are not attributed to a member and are not filtered by that
- * member's ConnectWise security role. It is opt-in for that reason: never in
- * `all`, never in a preset, and unregistered unless CW_DB_* is configured.
+ * member's ConnectWise security role. What gates it is the server: those tools
+ * are registered only when CW_DB_* is configured. On a server that has a
+ * database, they are part of `all` and of the default selection.
  */
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";

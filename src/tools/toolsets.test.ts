@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   DEFAULT_TOOLSETS,
-  OPT_IN_TOOLSET_KEYS,
   PRESETS,
   resolveToolsets,
   TOOLSET_KEYS,
@@ -66,26 +65,22 @@ describe("resolveToolsets", () => {
   });
 });
 
-describe("opt-in toolsets", () => {
-  it("keeps sql out of the all preset and the default selection", () => {
-    expect(PRESETS.all).not.toContain("sql");
-    expect(DEFAULT_TOOLSETS).not.toContain("sql");
-    expect(PRESETS.all).toEqual(TOOLSET_KEYS.filter((key) => key !== "sql"));
+describe("the database toolset", () => {
+  it("is part of all and of the default selection", () => {
+    expect(PRESETS.all).toEqual([...TOOLSET_KEYS]);
+    expect(DEFAULT_TOOLSETS).toEqual([...TOOLSET_KEYS]);
+    expect(DEFAULT_TOOLSETS).toContain("sql");
   });
 
-  it("resolves sql only when it is named explicitly", () => {
+  it("resolves on its own and alongside other keys", () => {
     expect(resolveToolsets("sql", FALLBACK)).toEqual(["sql"]);
-    expect(resolveToolsets("all,sql", FALLBACK)).toEqual([...PRESETS.all, "sql"]);
     expect(resolveToolsets("tech,sql", FALLBACK)).toEqual([...PRESETS.tech, "sql"]);
-    expect(resolveToolsets("sql,all,sql", FALLBACK)).toEqual(["sql", ...PRESETS.all]);
+    expect(resolveToolsets("all,sql", FALLBACK)).toEqual([...TOOLSET_KEYS]);
   });
 
-  it("never hides an opt-in key inside a preset", () => {
-    for (const key of OPT_IN_TOOLSET_KEYS) {
-      expect(TOOLSET_KEYS).toContain(key);
-      for (const [name, keys] of Object.entries(PRESETS)) {
-        expect(keys, `preset "${name}" must not include the opt-in key "${key}"`).not.toContain(key);
-      }
+  it("stays out of the persona presets — a technician surface is not a database surface", () => {
+    for (const name of ["tech", "dispatch", "invoicing"]) {
+      expect(PRESETS[name], `preset "${name}"`).not.toContain("sql");
     }
   });
 });

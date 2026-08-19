@@ -17,7 +17,7 @@
  *                         the "all" preset). HTTP sessions may override per
  *                         request via the x-cw-toolsets header.
  *
- * ConnectWise database (on-prem only; enables the opt-in "sql" toolset). The
+ * ConnectWise database (on-prem only; enables the "sql" toolset). The
  * four core variables are required together, or all left unset:
  *   CW_DB_HOST            SQL Server host, or "host\INSTANCE" for a named instance
  *   CW_DB_NAME            Database, e.g. cwwebapp_acme
@@ -43,11 +43,18 @@
  * The `sql` toolset is the exception: it reads the ConnectWise database directly
  * through a server-wide read-only login, not the session member's API keys — so
  * its results are not attributed to a member and are not filtered by that
- * member's ConnectWise security role. It is opt-in for that reason: never in
- * `all`, never in a preset, and unregistered unless CW_DB_* is configured.
+ * member's ConnectWise security role. Configuring CW_DB_* is what enables it;
+ * once configured it is part of `all` and of the default selection, so decide
+ * deliberately whether every session on this server should have it.
  */
 
-import { DEFAULT_TOOLSETS, resolveToolsets, type ToolsetKey } from "./tools/toolsets.js";
+import {
+  DEFAULT_TOOLSETS,
+  DB_TOOLSETS,
+  resolveToolsets,
+  withoutDbToolsets,
+  type ToolsetKey,
+} from "./tools/toolsets.js";
 
 export type Transport = "stdio" | "http";
 
@@ -210,6 +217,15 @@ export function loadDbConfig(env: NodeJS.ProcessEnv): DbConfig | undefined {
   };
 }
 
+/** True when a raw toolset list names a database-backed key outright. */
+function namesDbToolset(raw: string | undefined): boolean {
+  const tokens = (raw ?? "")
+    .split(",")
+    .map((token) => token.trim().toLowerCase())
+    .filter(Boolean);
+  return tokens.some((token) => (DB_TOOLSETS as readonly string[]).includes(token));
+}
+
 export function loadConfig(
   argv: string[] = process.argv.slice(2),
   env: NodeJS.ProcessEnv = process.env
@@ -249,19 +265,26 @@ export function loadConfig(
     throw new ConfigError("CW_PUBLIC_KEY / CW_PRIVATE_KEY are required for stdio transport");
   }
 
+  const toolsetsRaw = flagValue(argv, "--toolsets") ?? env.CW_TOOLSETS;
   let toolsets: ToolsetKey[];
   try {
-    toolsets = resolveToolsets(flagValue(argv, "--toolsets") ?? env.CW_TOOLSETS, DEFAULT_TOOLSETS, "throw");
+    toolsets = resolveToolsets(toolsetsRaw, DEFAULT_TOOLSETS, "throw");
   } catch (err) {
     throw new ConfigError(err instanceof Error ? err.message : String(err));
   }
 
   const db = loadDbConfig(env);
-  if (!db && toolsets.includes("sql")) {
-    throw new ConfigError(
-      'Toolset "sql" is selected but no ConnectWise database is configured — set CW_DB_HOST, ' +
-        'CW_DB_NAME, CW_DB_USER and CW_DB_PASSWORD, or drop "sql" from CW_TOOLSETS.'
-    );
+  if (!db) {
+    // The database toolsets are part of `all` and of the default, so a server
+    // with no database must not fail to start over a selection it never asked
+    // for — prune them. Only naming one outright is a configuration error.
+    if (namesDbToolset(toolsetsRaw)) {
+      throw new ConfigError(
+        'Toolset "sql" is selected but no ConnectWise database is configured — set CW_DB_HOST, ' +
+          'CW_DB_NAME, CW_DB_USER and CW_DB_PASSWORD, or drop "sql" from CW_TOOLSETS.'
+      );
+    }
+    toolsets = withoutDbToolsets(toolsets);
   }
 
   return {

@@ -13,11 +13,11 @@
  *  - The full tool surface is exposed; there is no MCP-level role gating.
  *  - A session id never carries privilege: every request re-authenticates and
  *    must present the same key pair (SHA-256 hash) the session was created with.
- *  - Exception: the opt-in `sql` toolset reads the ConnectWise database through a
+ *  - Exception: the `sql` toolset reads the ConnectWise database through a
  *    server-wide read-only login rather than the session's keys, so its results
  *    are not attributed to a member and not filtered by that member's security
- *    role. A session gets it only by naming it, and only when the server has a
- *    database configured.
+ *    role. It exists only when the server has a database configured; where it
+ *    does, every session that does not narrow its toolsets gets it.
  */
 
 import { createHash, randomUUID } from "node:crypto";

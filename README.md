@@ -1,6 +1,6 @@
 # mcp-connectwise-psa
 
-An MCP ([Model Context Protocol](https://modelcontextprotocol.io)) server for [ConnectWise PSA](https://www.connectwise.com/platform/psa) (Manage) — **curated tools across 8 toolsets** covering technicians, dispatchers, and billing, plus an escape hatch for the rest of the API and an opt-in read-only SQL toolset for on-prem deployments, so an AI assistant works PSA the way each role does:
+An MCP ([Model Context Protocol](https://modelcontextprotocol.io)) server for [ConnectWise PSA](https://www.connectwise.com/platform/psa) (Manage) — **curated tools across 8 toolsets** covering technicians, dispatchers, and billing, plus an escape hatch for the rest of the API and a read-only SQL toolset for on-prem deployments, so an AI assistant works PSA the way each role does:
 
 - **Tickets** — search / my tickets / full detail with notes, create, update status/priority/owner, add discussion/internal notes, plus board·status·priority discovery and per-ticket time & tasks
 - **Time** — log time against tickets, review your own time, work-role lookup, and **list & submit your timesheets**
@@ -8,7 +8,7 @@ An MCP ([Model Context Protocol](https://modelcontextprotocol.io)) server for [C
 - **Configurations** — devices/assets with serials, IPs, OS, warranty (read-only)
 - **Dispatch** *(schedule)* — schedule entries (list/mine/create/reschedule/cancel), and **members with their timezone, working hours, and free-vs-booked availability**
 - **Invoicing** *(finance, read-only)* — invoices, agreements, and **unbilled billable time** ready to bill
-- **SQL** *(opt-in, on-prem only)* — read-only T-SQL straight against the `cwwebapp_*` Manage database for the cross-table reporting REST cannot express, with a searchable schema catalog and a **library of saved queries** the assistant can grow. Never in `all`; a session must name `sql`
+- **SQL** *(on-prem only)* — read-only T-SQL straight against the `cwwebapp_*` Manage database for the cross-table reporting REST cannot express, with a searchable schema catalog and a **library of saved queries** the assistant can grow. Enabled by configuring `CW_DB_*`; where it is, every session that does not narrow its toolsets has it
 - **Toolsets & personas** — enable only what a session needs via the `x-cw-toolsets` header (or `CW_TOOLSETS`); presets `tech` / `dispatch` / `invoicing` / `all`. Default is `all` — narrow it per session when a smaller surface is wanted. Each tool also reports its toolset as `_meta.group`, so an aggregator (the MSPStack gateway) can group and switch tools by capability
 - **Per-member API keys (BYOK)** — each user supplies their own ConnectWise member keys; ConnectWise enforces that member's security role, and every write is attributed to the *actual person*
 - **Transports** — stdio for local use, streamable HTTP for shared deployments; Docker image included
@@ -95,9 +95,9 @@ Tools are grouped into **toolsets** so a session only sees the capabilities it n
 | `schedule` | `cw_list_schedule_entries`, `cw_my_schedule`, `cw_schedule_ticket`, `cw_update_schedule_entry`, `cw_delete_schedule_entry`, `cw_member_availability`, `cw_list_members`, `cw_get_member` |
 | `finance` | `cw_list_invoices`, `cw_get_invoice`, `cw_list_agreements`, `cw_get_agreement`, `cw_list_unbilled_time` |
 | `advanced` | `cw_find_endpoint` (search the full CW API — ~1,150 endpoints), `cw_get` (read-only GET on any path) |
-| `sql` *(opt-in, on-prem)* | `cw_db_query` (read-only T-SQL), `cw_db_find_table` (schema catalog), `cw_db_find_query` / `cw_db_save_query` (saved-query library) |
+| `sql` *(on-prem, needs `CW_DB_*`)* | `cw_db_query` (read-only T-SQL), `cw_db_find_table` (schema catalog), `cw_db_find_query` / `cw_db_save_query` (saved-query library) |
 
-**Presets** bundle keys per persona: `tech` = tickets + time + companies + configurations · `dispatch` = tickets + schedule + companies + configurations · `invoicing` = finance + time + companies · `all` = everything **except `sql`** (so it does include `advanced`).
+**Presets** bundle keys per persona: `tech` = tickets + time + companies + configurations · `dispatch` = tickets + schedule + companies + configurations · `invoicing` = finance + time + companies · `all` = every key. The persona presets deliberately exclude `sql` — a technician surface is not a database surface.
 
 The **`advanced`** toolset is the escape hatch (in `all`, but in no persona preset): `cw_find_endpoint` searches a bundled catalog of the whole ConnectWise API, and `cw_get` performs a read-only GET on any path — so an assistant can reach the long tail (procurement, sales, projects, system…) the curated tools don't wrap. To drop it, name the keys or a persona preset instead (`x-cw-toolsets: tech`).
 
@@ -106,11 +106,15 @@ Select toolsets with a comma list mixing keys and presets:
 - **HTTP** — the `x-cw-toolsets` header, per session: `x-cw-toolsets: dispatch` or `x-cw-toolsets: tech,finance`.
 - **stdio** — the `CW_TOOLSETS` env var or `--toolsets` flag: `CW_TOOLSETS=invoicing`.
 
-The **default is the `all` preset** — every capability except the opt-in `sql`; a client that wants a smaller surface names the keys or persona it needs. Unknown keys in `CW_TOOLSETS`/`--toolsets` fail fast; unknown tokens in the `x-cw-toolsets` header are ignored. The only destructive tool is `cw_delete_schedule_entry` (dispatch); finance is read-only. `cw_db_save_query` writes, but to the query-library file — database access itself is SELECT-only by grant.
+The **default is the `all` preset** — every capability the server is configured for; a client that wants a smaller surface names the keys or persona it needs. Unknown keys in `CW_TOOLSETS`/`--toolsets` fail fast; unknown tokens in the `x-cw-toolsets` header are ignored. The only destructive tool is `cw_delete_schedule_entry` (dispatch); finance is read-only. `cw_db_save_query` writes, but to the query-library file — database access itself is SELECT-only by grant.
 
 ### Exception: the `sql` toolset
 
-Every other toolset runs on the caller's own ConnectWise keys, so ConnectWise filters what comes back. `sql` does not: it reads the database through a **server-wide read-only login**, so its results are not attributed to a member and are not filtered by that member's security role, board restrictions or record permissions. That is why it is opt-in — never in `all`, never in a preset, and unregistered unless `CW_DB_*` is configured. On a shared HTTP deployment, any session that names `sql` can read the whole PSA database; grant it deliberately.
+Every other toolset runs on the caller's own ConnectWise keys, so ConnectWise filters what comes back. `sql` does not: it reads the database through a **server-wide read-only login**, so its results are not attributed to a member and are not filtered by that member's security role, board restrictions or record permissions.
+
+Configuring `CW_DB_*` is therefore the decision that matters. Once a server has a database, `sql` is an ordinary key: it is in `all`, it is in the default selection, and **every session that does not narrow its toolsets can read the whole PSA database**. A server without `CW_DB_*` prunes it silently, so nothing breaks for deployments that never wanted it.
+
+If you need database access for some callers but not others, do it per session (`x-cw-toolsets: tech`) or in front of the server — an aggregating gateway can tier the `cw_db_*` tools separately. What bounds the damage on the server side is the login: see the runbook below, and keep it to `db_datareader` with credential columns denied.
 
 ## SQL toolset (on-prem database)
 
@@ -119,12 +123,11 @@ Cloud-hosted ConnectWise gives you no database access, so this toolset is for **
 ```bash
 CW_DB_HOST=sqlhost CW_DB_NAME=cwwebapp_acme \
 CW_DB_USER=cw_mcp_ro CW_DB_PASSWORD=… \
-CW_TOOLSETS=all,sql \
 CW_DB_QUERY_LIBRARY=/data/cw-queries.json \
 node dist/index.js
 ```
 
-`sql` still has to be named — `CW_TOOLSETS=all` alone will not enable it, and asking for `sql` without `CW_DB_*` fails at startup. Nothing connects to the database until a session actually uses a tool.
+That is all it takes: with a database configured the `sql` toolset is part of the default selection. Naming `sql` without `CW_DB_*` fails at startup (a selection that only *includes* it, like `all`, is pruned instead). Nothing connects to the database until a session actually uses a tool.
 
 **Start from the reporting views.** ConnectWise ships denormalized `v_rpt_*` views that already join board, status, company and contact onto a record — `v_rpt_service`, `v_rpt_time`, `v_rpt_company`, `v_rpt_invoices`, `v_rpt_agreementlist`. `cw_db_find_table` knows them and the base tables behind them; it carries key columns only, because the exact column list is one `INFORMATION_SCHEMA` query away and is always right for *your* version.
 

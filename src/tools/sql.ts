@@ -8,10 +8,11 @@
  *  - cw_db_save_query: add a query to the library (the only write in the server,
  *                      and it writes to a file, never to ConnectWise).
  *
- * Opt-in: this toolset reads the database through a server-wide read-only login,
- * not the session member's API keys — so its results are not attributed to a
- * member and are not filtered by that member's ConnectWise security role. It is
- * never in `all`, never in a preset, and unregistered without CW_DB_*.
+ * This toolset reads the database through a server-wide read-only login, not the
+ * session member's API keys — so its results are not attributed to a member and
+ * are not filtered by that member's ConnectWise security role. It registers only
+ * where CW_DB_* is configured; on such a server it is part of `all` and of the
+ * default selection, so the read-only grants on that login are what bound it.
  */
 
 import { z } from "zod";

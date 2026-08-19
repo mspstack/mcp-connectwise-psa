@@ -6,8 +6,8 @@
  *
  * Exception: the `sql` toolset reads the ConnectWise database through a
  * server-wide read-only login — no member attribution, no CW security-role
- * filtering — so it is registered only when the session named it and the server
- * has a database configured.
+ * filtering — so it is registered only where the server has a database
+ * configured.
  */
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";

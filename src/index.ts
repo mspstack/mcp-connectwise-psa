@@ -17,7 +17,7 @@ Options:
   --transport stdio|http   Transport (default: stdio; env TRANSPORT)
   --port <n>               HTTP port (default: 3000; env PORT)
   --site <host>            ConnectWise host (env CW_SITE)
-  --toolsets <list>        Enabled toolsets (env CW_TOOLSETS; default: all — every key except sql)
+  --toolsets <list>        Enabled toolsets (env CW_TOOLSETS; default: all)
   --help                   Show this help
 
 Environment:
@@ -29,11 +29,11 @@ Environment:
   CW_MEMBER_IDENTIFIER     Member the stdio keys belong to (my-tickets/my-time)
   CW_TOOLSETS              Comma list of toolset keys/presets (default: all).
                            Keys: tickets, time, companies, configurations,
-                           schedule, finance, advanced, and sql (opt-in —
-                           requires CW_DB_*, and excluded from "all").
+                           schedule, finance, advanced, and sql (needs CW_DB_*;
+                           pruned when no database is configured).
                            Presets: tech, dispatch, invoicing, all.
 
-ConnectWise database (on-prem only; enables the opt-in sql toolset). The first
+ConnectWise database (on-prem only; enables the sql toolset). The first
 four are required together, or all left unset:
   CW_DB_HOST               SQL Server host, or host\\INSTANCE
   CW_DB_NAME               Database, e.g. cwwebapp_acme
