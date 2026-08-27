@@ -66,7 +66,9 @@ export function registerTimeTools(reg: ToolRegistrar, client: CWClient): void {
         "attributed to the member whose API keys this session uses. Provide time_start plus either " +
         "time_end or hours. For a span containing a break, pass the REAL time_end and put the break in " +
         "hours_deduct; passing a shortened `hours` instead makes ConnectWise display an end time that " +
-        "never happened. Work role and work type default to the ticket's unless given.",
+        "never happened. Work role and work type default to the ticket's unless given. The note can also " +
+        "be copied onto the ticket: add_to_detail is the CUSTOMER-VISIBLE Discussion, add_to_internal is " +
+        "staff-only Internal Analysis — leaving both false keeps the note on the time entry alone.",
       inputSchema: {
         ticket_id: z.number().int().positive().describe("Ticket to charge the time to"),
         time_start: z
@@ -89,7 +91,19 @@ export function registerTimeTools(reg: ToolRegistrar, client: CWClient): void {
         add_to_detail: z
           .boolean()
           .default(false)
-          .describe("Also show the notes on the ticket as a discussion note (default false)"),
+          .describe(
+            "Copy the notes onto the ticket's Discussion — CUSTOMER-VISIBLE on portals and emails (default false)"
+          ),
+        add_to_internal: z
+          .boolean()
+          .default(false)
+          .describe(
+            "Copy the notes onto the ticket's Internal Analysis — staff-only (default false). Use this, not add_to_detail, for internal commentary"
+          ),
+        add_to_resolution: z
+          .boolean()
+          .default(false)
+          .describe("Copy the notes onto the ticket's Resolution (default false)"),
       },
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     },
@@ -105,6 +119,8 @@ export function registerTimeTools(reg: ToolRegistrar, client: CWClient): void {
       work_type?: string;
       ticket_type: TicketKindArg;
       add_to_detail: boolean;
+      add_to_internal: boolean;
+      add_to_resolution: boolean;
     }) => {
       try {
         const start = new Date(args.time_start);
@@ -139,7 +155,11 @@ export function registerTimeTools(reg: ToolRegistrar, client: CWClient): void {
           timeEnd: cwTimestamp(end),
           notes: args.notes,
           billableOption: args.billable ? "Billable" : "DoNotBill",
+          // Three independent destinations on the ticket, mirroring its note
+          // sections. All false means the note stays on the time entry only.
           addToDetailDescriptionFlag: args.add_to_detail,
+          addToInternalAnalysisFlag: args.add_to_internal,
+          addToResolutionFlag: args.add_to_resolution,
           // Omitted, not nulled: a null would override the ticket's default.
           ...(args.hours_deduct !== undefined ? { hoursDeduct: args.hours_deduct } : {}),
           ...(args.work_role ? { workRole: { name: args.work_role } } : {}),
@@ -157,8 +177,18 @@ export function registerTimeTools(reg: ToolRegistrar, client: CWClient): void {
 
         const hours = entry.actualHours ?? (spanHours - (args.hours_deduct ?? 0)).toFixed(2);
         const deductNote = args.hours_deduct ? ` (${args.hours_deduct}h deducted)` : "";
+        // Say where the note landed: customer-visible vs staff-only is not a
+        // detail to leave implicit.
+        const destinations = [
+          args.add_to_detail && "discussion (customer-visible)",
+          args.add_to_internal && "internal analysis",
+          args.add_to_resolution && "resolution",
+        ].filter(Boolean) as string[];
+        const noteWhere = destinations.length
+          ? ` Note copied to the ticket: ${destinations.join(", ")}.`
+          : " Note is on the time entry only.";
         return text(
-          `Time entry ${entry.id} logged: ${hours}h${deductNote} on ${CHARGE_TO_TYPES[kind]} #${args.ticket_id} by ${entry.member?.name ?? entry.member?.identifier ?? "(session member)"} (${entry.billableOption ?? (args.billable ? "Billable" : "DoNotBill")})${entry.workRole?.name ? `, role: ${entry.workRole.name}` : ""}.`
+          `Time entry ${entry.id} logged: ${hours}h${deductNote} on ${CHARGE_TO_TYPES[kind]} #${args.ticket_id} by ${entry.member?.name ?? entry.member?.identifier ?? "(session member)"} (${entry.billableOption ?? (args.billable ? "Billable" : "DoNotBill")})${entry.workRole?.name ? `, role: ${entry.workRole.name}` : ""}.${noteWhere}`
         );
       } catch (error) {
         return failure(error);

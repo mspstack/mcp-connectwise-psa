@@ -193,7 +193,7 @@ Two consequences worth knowing up front:
 - Timestamps must have whole seconds — the server normalizes (ConnectWise rejects fractional seconds).
 - Time entries require an **open time report period** in ConnectWise for the entry date; the API's message is passed through when none exists.
 - `/system/myAccount` is missing on some on-prem versions — provide the member identifier explicitly (`CW_MEMBER_IDENTIFIER` or `x-cw-member-id`) for "my tickets"/"my time".
-- Discussion notes are customer-visible; internal notes are not — the tool makes this explicit.
+- Discussion notes are customer-visible; internal notes are not — the tools make this explicit. A time entry's note can be copied onto the ticket as Discussion (`add_to_detail`), Internal Analysis (`add_to_internal`), Resolution (`add_to_resolution`), or none of them — and the result says which. Note that all three off means the note stays on the time entry, *not* that it becomes internal.
 - `cw_db_query` stops at `max_rows` (default 200) or a ~20,000-character budget and cancels the query server-side; the response says which limit it hit. The per-query deadline is 30 s by default, 120 s at most.
 - The database connection reads at **READ UNCOMMITTED** so a reporting scan cannot block a technician saving a ticket. The cost is dirty reads: counts are approximate under concurrent writes. Set `CW_DB_READ_UNCOMMITTED=false` if a report must be exact.
 - `SELECT *` fails on any table with a DENY'd column — name the columns you need.
