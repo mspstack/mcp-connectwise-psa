@@ -3,7 +3,7 @@
   "name": "io.github.mspstack/mcp-connectwise-psa",
   "title": "ConnectWise PSA",
   "description": "ConnectWise PSA (Manage) MCP server — tickets, time entries, companies, configurations, BYOK",
-  "version": "0.10.0",
+  "version": "0.11.0",
   "repository": {
     "url": "https://github.com/mspstack/mcp-connectwise-psa",
     "source": "github"
@@ -14,7 +14,7 @@
       "registryType": "npm",
       "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "mcp-connectwise-psa",
-      "version": "0.10.0",
+      "version": "0.11.0",
       "runtimeHint": "npx",
       "transport": {
         "type": "stdio"
