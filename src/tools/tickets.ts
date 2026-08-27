@@ -1,4 +1,10 @@
-/** Service ticket tools: search, my tickets, get, create, update, notes. */
+/**
+ * Ticket tools: search, my tickets, get, create, update, notes.
+ *
+ * Covers both service and project tickets. ConnectWise keeps them on separate
+ * REST resources, so the read tools query both by default and the by-id tools
+ * detect which one an id belongs to — see ./ticket-kind.ts.
+ */
 
 import { z } from "zod";
 import type { ToolRegistrar } from "./registrar.js";
@@ -25,17 +31,34 @@ import {
   UNKNOWN_MEMBER_MESSAGE,
   type ToolResult,
 } from "./shared.js";
+import {
+  CHARGE_TO_TYPES,
+  listAcrossKinds,
+  resolveTicketKind,
+  ticketKindField,
+  ticketPath,
+  ticketScopeField,
+  type CrossKindResult,
+  type TicketKindArg,
+  type TicketScope,
+} from "./ticket-kind.js";
 
+// Deliberately the same list for both resources: every field here exists on the
+// service and the project ticket model, and one unknown field fails the whole
+// call. Project specifics (project, phase) come from cw_get_ticket.
 const TICKET_LIST_FIELDS =
-  "id,summary,status/name,company/name,board/name,priority/name,owner/identifier,resources,dateEntered,_info/lastUpdated";
+  "id,summary,recordType,status/name,company/name,board/name,priority/name,owner/identifier,resources,dateEntered,_info/lastUpdated";
 const TICKET_DETAIL_FIELDS =
   "id,summary,recordType,board/name,status/name,priority/name,company/name,company/id,contact/name,owner/identifier,resources,closedFlag,dateEntered";
 const NOTE_FIELDS =
   "id,text,detailDescriptionFlag,internalAnalysisFlag,resolutionFlag,member/name,contact/name,createdBy,dateCreated";
 
 function ticketLine(t: Ticket): string {
+  // recordType tells a project ticket from a service one — worth showing, since
+  // it decides which tools and which chargeToType apply.
+  const kind = t.recordType && t.recordType !== "ServiceTicket" ? ` _(${t.recordType})_` : "";
   const bits = [
-    `#${t.id} ${t.summary ?? "(no summary)"}`,
+    `#${t.id} ${t.summary ?? "(no summary)"}${kind}`,
     `  ${t.company?.name ?? "?"} | ${t.board?.name ?? "?"} | ${t.status?.name ?? "?"} | priority: ${t.priority?.name ?? "—"}`,
   ];
   const assigned = t.resources || t.owner?.identifier;
@@ -43,8 +66,23 @@ function ticketLine(t: Ticket): string {
   return bits.join("\n");
 }
 
-function ticketList(items: Ticket[], page: number, hasMore: boolean): string {
-  const lines = [`# Tickets (${items.length} on this page)`, ""];
+/** Note which resources were skipped, so a partial answer never looks complete. */
+function skippedNote(failed: CrossKindResult<unknown>["failed"]): string[] {
+  if (failed.length === 0) return [];
+  return failed.map(
+    ({ kind, error }) =>
+      `> ${kind} tickets could not be listed (${error instanceof Error ? error.message : String(error)}) — results below are incomplete.`
+  );
+}
+
+function ticketList(
+  items: Ticket[],
+  page: number,
+  hasMore: boolean,
+  failed: CrossKindResult<unknown>["failed"] = []
+): string {
+  const lines = [`# Tickets (${items.length} on this page)`, "", ...skippedNote(failed)];
+  if (failed.length > 0) lines.push("");
   for (const t of items) lines.push(ticketLine(t), "");
   lines.push(pageFooter(page, hasMore));
   return lines.join("\n");
@@ -62,9 +100,11 @@ export function registerTicketTools(reg: ToolRegistrar, client: CWClient): void 
       name: "cw_search_tickets",
       title: "Search ConnectWise Tickets",
       description:
-        "Search service tickets by company, board, status, summary text, or assigned member. " +
-        "Defaults to open tickets only. Returns ticket ids for use with cw_get_ticket / cw_add_ticket_note / cw_create_time_entry.",
+        "Search tickets by company, board, status, summary text, or assigned member. Covers SERVICE and " +
+        "PROJECT tickets — ConnectWise keeps them apart, and ticket_type picks which. Defaults to open " +
+        "tickets only. Returns ticket ids for use with cw_get_ticket / cw_add_ticket_note / cw_create_time_entry.",
       inputSchema: {
+        ticket_type: ticketScopeField,
         company_id: z.number().int().positive().optional().describe("Filter by company ID"),
         company_name: z.string().optional().describe("Filter by exact company name"),
         board: z.string().optional().describe('Service board name (e.g. "Help Desk")'),
@@ -79,6 +119,7 @@ export function registerTicketTools(reg: ToolRegistrar, client: CWClient): void 
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     },
     async (args: {
+      ticket_type: TicketScope;
       company_id?: number;
       company_name?: string;
       board?: string;
@@ -101,16 +142,21 @@ export function registerTicketTools(reg: ToolRegistrar, client: CWClient): void 
           args.assigned_to &&
             `(resources contains ${q(args.assigned_to)} OR owner/identifier=${q(args.assigned_to)})`
         );
-        const page = await client.getList<Ticket>("/service/tickets", {
-          conditions,
-          orderBy: "id desc",
-          fields: TICKET_LIST_FIELDS,
-          page: args.page_number,
-          pageSize: args.page_size,
-        });
+        const page = await listAcrossKinds<Ticket>(
+          args.ticket_type,
+          (kind) =>
+            client.getList<Ticket>(ticketPath(kind), {
+              conditions,
+              orderBy: "id desc",
+              fields: TICKET_LIST_FIELDS,
+              page: args.page_number,
+              pageSize: args.page_size,
+            }),
+          args.page_size
+        );
         if (page.items.length === 0) return text("No tickets found.");
         if (args.response_format === "json") return text(clip(json(page)));
-        return text(clip(ticketList(page.items, page.page, page.hasMore)));
+        return text(clip(ticketList(page.items, args.page_number, page.hasMore, page.failed)));
       } catch (error) {
         return failure(error);
       }
@@ -122,31 +168,49 @@ export function registerTicketTools(reg: ToolRegistrar, client: CWClient): void 
       name: "cw_my_tickets",
       title: "My ConnectWise Tickets",
       description:
-        "List open tickets assigned to the member this session acts as (owner or listed in resources).",
+        "List open tickets assigned to the member this session acts as (owner or listed in resources). " +
+        "Includes project tickets as well as service tickets by default.",
       inputSchema: {
+        ticket_type: ticketScopeField,
         page_number: pageNumberField,
         page_size: pageSizeField,
         response_format: responseFormatField,
       },
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     },
-    async (args: { page_number: number; page_size: number; response_format: "markdown" | "json" }) => {
+    async (args: {
+      ticket_type: TicketScope;
+      page_number: number;
+      page_size: number;
+      response_format: "markdown" | "json";
+    }) => {
       try {
         const memberId = await client.me();
         if (!memberId) return { ...text(UNKNOWN_MEMBER_MESSAGE), isError: true } as ToolResult;
-        const page = await client.getList<Ticket>("/service/tickets", {
-          conditions: allOf(
-            "closedFlag=false",
-            `(resources contains ${q(memberId)} OR owner/identifier=${q(memberId)})`
-          ),
-          orderBy: "id desc",
-          fields: TICKET_LIST_FIELDS,
-          page: args.page_number,
-          pageSize: args.page_size,
-        });
+        const conditions = allOf(
+          "closedFlag=false",
+          `(resources contains ${q(memberId)} OR owner/identifier=${q(memberId)})`
+        );
+        const page = await listAcrossKinds<Ticket>(
+          args.ticket_type,
+          (kind) =>
+            client.getList<Ticket>(ticketPath(kind), {
+              conditions,
+              orderBy: "id desc",
+              fields: TICKET_LIST_FIELDS,
+              page: args.page_number,
+              pageSize: args.page_size,
+            }),
+          args.page_size
+        );
         if (page.items.length === 0) return text(`No open tickets assigned to ${memberId}.`);
         if (args.response_format === "json") return text(clip(json(page)));
-        return text(clip(`Acting as **${memberId}**\n\n` + ticketList(page.items, page.page, page.hasMore)));
+        return text(
+          clip(
+            `Acting as **${memberId}**\n\n` +
+              ticketList(page.items, args.page_number, page.hasMore, page.failed)
+          )
+        );
       } catch (error) {
         return failure(error);
       }
@@ -157,18 +221,30 @@ export function registerTicketTools(reg: ToolRegistrar, client: CWClient): void 
     {
       name: "cw_get_ticket",
       title: "Get ConnectWise Ticket",
-      description: "Get one ticket with its most recent notes (newest first).",
+      description:
+        "Get one ticket with its most recent notes (newest first). Works for service and project " +
+        "tickets — the resource is detected from the id.",
       inputSchema: {
         ticket_id: z.number().int().positive().describe("The ticket ID"),
         note_count: z.number().int().positive().max(50).default(10).describe("How many recent notes to include"),
+        ticket_type: ticketKindField,
         response_format: responseFormatField,
       },
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     },
-    async (args: { ticket_id: number; note_count: number; response_format: "markdown" | "json" }) => {
+    async (args: {
+      ticket_id: number;
+      note_count: number;
+      ticket_type: TicketKindArg;
+      response_format: "markdown" | "json";
+    }) => {
       try {
-        const ticket = await client.getOne<Ticket>(`/service/tickets/${args.ticket_id}`, TICKET_DETAIL_FIELDS);
-        const notes = await client.getList<TicketNote>(`/service/tickets/${args.ticket_id}/notes`, {
+        const kind = await resolveTicketKind(client, args.ticket_id, args.ticket_type);
+        const ticket = await client.getOne<Ticket>(
+          ticketPath(kind, args.ticket_id),
+          TICKET_DETAIL_FIELDS
+        );
+        const notes = await client.getList<TicketNote>(ticketPath(kind, args.ticket_id, "notes"), {
           orderBy: "dateCreated desc",
           fields: NOTE_FIELDS,
           pageSize: args.note_count,
@@ -181,6 +257,7 @@ export function registerTicketTools(reg: ToolRegistrar, client: CWClient): void 
         const lines = [
           `# Ticket #${ticket.id}: ${ticket.summary ?? ""}`,
           "",
+          `- **Type**: ${ticket.recordType ?? (kind === "project" ? "ProjectTicket" : "ServiceTicket")}`,
           `- **Company**: ${ticket.company?.name ?? "?"} (ID: ${ticket.company?.id ?? "?"})`,
           `- **Board**: ${ticket.board?.name ?? "?"} | **Status**: ${ticket.status?.name ?? "?"} | **Priority**: ${ticket.priority?.name ?? "—"}`,
           `- **Contact**: ${ticket.contact?.name ?? "—"}`,
@@ -202,7 +279,9 @@ export function registerTicketTools(reg: ToolRegistrar, client: CWClient): void 
     {
       name: "cw_create_ticket",
       title: "Create ConnectWise Ticket",
-      description: "Create a new service ticket on a board for a company.",
+      description:
+        "Create a new SERVICE ticket on a board for a company. Project tickets cannot be created here — " +
+        "they need a project and a phase.",
       inputSchema: {
         company_id: z.number().int().positive().describe("Company ID (find with cw_search_companies)"),
         board: z.string().describe('Service board name (e.g. "Help Desk")'),
@@ -257,6 +336,7 @@ export function registerTicketTools(reg: ToolRegistrar, client: CWClient): void 
         priority: z.string().optional().describe("New priority name"),
         summary: z.string().max(100).optional().describe("New summary"),
         owner_identifier: z.string().optional().describe("Member identifier to set as owner"),
+        ticket_type: ticketKindField,
         response_format: responseFormatField,
       },
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
@@ -267,6 +347,7 @@ export function registerTicketTools(reg: ToolRegistrar, client: CWClient): void 
       priority?: string;
       summary?: string;
       owner_identifier?: string;
+      ticket_type: TicketKindArg;
       response_format: "markdown" | "json";
     }) => {
       try {
@@ -278,7 +359,8 @@ export function registerTicketTools(reg: ToolRegistrar, client: CWClient): void 
           ops.push({ op: "replace", path: "owner", value: { identifier: args.owner_identifier } });
         if (ops.length === 0) return text("Nothing to update — provide at least one field.");
 
-        const ticket = await client.patch<Ticket>(`/service/tickets/${args.ticket_id}`, ops);
+        const kind = await resolveTicketKind(client, args.ticket_id, args.ticket_type);
+        const ticket = await client.patch<Ticket>(ticketPath(kind, args.ticket_id), ops);
         if (args.response_format === "json") return text(json(ticket));
         return text(
           `Ticket #${ticket.id} updated — status: ${ticket.status?.name ?? "?"}, priority: ${ticket.priority?.name ?? "—"}, owner: ${ticket.owner?.identifier ?? "—"}.`
@@ -301,12 +383,20 @@ export function registerTicketTools(reg: ToolRegistrar, client: CWClient): void 
         note: z.string().min(1).describe("Note text (plain text)"),
         internal: z.boolean().default(false).describe("Internal analysis note instead of discussion (default false)"),
         resolution: z.boolean().default(false).describe("Mark as resolution note (default false)"),
+        ticket_type: ticketKindField,
       },
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     },
-    async (args: { ticket_id: number; note: string; internal: boolean; resolution: boolean }) => {
+    async (args: {
+      ticket_id: number;
+      note: string;
+      internal: boolean;
+      resolution: boolean;
+      ticket_type: TicketKindArg;
+    }) => {
       try {
-        const created = await client.post<TicketNote>(`/service/tickets/${args.ticket_id}/notes`, {
+        const kind = await resolveTicketKind(client, args.ticket_id, args.ticket_type);
+        const created = await client.post<TicketNote>(ticketPath(kind, args.ticket_id, "notes"), {
           text: args.note,
           detailDescriptionFlag: !args.internal,
           internalAnalysisFlag: args.internal,
@@ -440,9 +530,12 @@ export function registerTicketTools(reg: ToolRegistrar, client: CWClient): void 
     {
       name: "cw_list_ticket_time",
       title: "List Time Entries on a Ticket",
-      description: "List all time entries logged against a ticket (by any member), newest first.",
+      description:
+        "List all time entries logged against a ticket (by any member), newest first. Works for service " +
+        "and project tickets.",
       inputSchema: {
         ticket_id: z.number().int().positive().describe("The ticket ID"),
+        ticket_type: ticketKindField,
         page_number: pageNumberField,
         page_size: pageSizeField,
         response_format: responseFormatField,
@@ -451,13 +544,15 @@ export function registerTicketTools(reg: ToolRegistrar, client: CWClient): void 
     },
     async (args: {
       ticket_id: number;
+      ticket_type: TicketKindArg;
       page_number: number;
       page_size: number;
       response_format: "markdown" | "json";
     }) => {
       try {
+        const kind = await resolveTicketKind(client, args.ticket_id, args.ticket_type);
         const page = await client.getList<TimeEntry>("/time/entries", {
-          conditions: `chargeToId=${args.ticket_id} AND chargeToType="ServiceTicket"`,
+          conditions: `chargeToId=${args.ticket_id} AND chargeToType="${CHARGE_TO_TYPES[kind]}"`,
           orderBy: "timeStart desc",
           fields: "id,member/identifier,timeStart,timeEnd,actualHours,billableOption,workType/name,notes",
           page: args.page_number,
@@ -486,13 +581,19 @@ export function registerTicketTools(reg: ToolRegistrar, client: CWClient): void 
       description: "List the task/checklist items on a ticket, with their done state.",
       inputSchema: {
         ticket_id: z.number().int().positive().describe("The ticket ID"),
+        ticket_type: ticketKindField,
         response_format: responseFormatField,
       },
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     },
-    async (args: { ticket_id: number; response_format: "markdown" | "json" }) => {
+    async (args: {
+      ticket_id: number;
+      ticket_type: TicketKindArg;
+      response_format: "markdown" | "json";
+    }) => {
       try {
-        const page = await client.getList<TicketTask>(`/service/tickets/${args.ticket_id}/tasks`, {
+        const kind = await resolveTicketKind(client, args.ticket_id, args.ticket_type);
+        const page = await client.getList<TicketTask>(ticketPath(kind, args.ticket_id, "tasks"), {
           fields: "id,notes,closedFlag,priority,resolution",
           pageSize: 200,
         });

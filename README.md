@@ -2,8 +2,8 @@
 
 An MCP ([Model Context Protocol](https://modelcontextprotocol.io)) server for [ConnectWise PSA](https://www.connectwise.com/platform/psa) (Manage) — **curated tools across 8 toolsets** covering technicians, dispatchers, and billing, plus an escape hatch for the rest of the API and a read-only SQL toolset for on-prem deployments, so an AI assistant works PSA the way each role does:
 
-- **Tickets** — search / my tickets / full detail with notes, create, update status/priority/owner, add discussion/internal notes, plus board·status·priority discovery and per-ticket time & tasks
-- **Time** — log time against tickets, review your own time, work-role lookup, and **list & submit your timesheets**
+- **Tickets** — search / my tickets / full detail with notes, create, update status/priority/owner, add discussion/internal notes, plus board·status·priority discovery and per-ticket time & tasks. Covers **service *and* project tickets** — ConnectWise keeps them on separate resources, so the read tools query both and the by-id tools detect which one an id belongs to
+- **Time** — log time against tickets (with work role, work type and CW's **Deduct** for breaks), review your own time, work-role and work-type lookup, and **list & submit your timesheets**
 - **Companies & contacts** — fast lookup, contact detail (phones/emails), company sites
 - **Configurations** — devices/assets with serials, IPs, OS, warranty (read-only)
 - **Dispatch** *(schedule)* — schedule entries (list/mine/create/reschedule/cancel), and **members with their timezone, working hours, and free-vs-booked availability**
@@ -89,7 +89,7 @@ Tools are grouped into **toolsets** so a session only sees the capabilities it n
 | Toolset key | Tools |
 |---|---|
 | `tickets` | `cw_search_tickets`, `cw_my_tickets`, `cw_get_ticket`, `cw_create_ticket`, `cw_update_ticket`, `cw_add_ticket_note`, `cw_list_boards`, `cw_get_board`, `cw_list_priorities`, `cw_list_ticket_time`, `cw_list_ticket_tasks` |
-| `time` | `cw_create_time_entry`, `cw_update_time_entry`, `cw_list_my_time`, `cw_list_work_roles`, `cw_list_my_timesheets`, `cw_submit_timesheet` |
+| `time` | `cw_create_time_entry`, `cw_update_time_entry`, `cw_list_my_time`, `cw_list_work_roles`, `cw_list_work_types`, `cw_list_my_timesheets`, `cw_submit_timesheet` |
 | `companies` | `cw_search_companies`, `cw_get_company`, `cw_search_contacts`, `cw_get_contact`, `cw_list_company_sites` |
 | `configurations` | `cw_list_configurations`, `cw_get_configuration` |
 | `schedule` | `cw_list_schedule_entries`, `cw_my_schedule`, `cw_schedule_ticket`, `cw_update_schedule_entry`, `cw_delete_schedule_entry`, `cw_member_availability`, `cw_list_members`, `cw_get_member` |
@@ -188,6 +188,8 @@ Two consequences worth knowing up front:
 ## Notes & limits
 
 - Ticket searches default to open tickets; status/board names are exact, text filters are substrings.
+- Service and project tickets live on different ConnectWise resources. Read tools take `ticket_type` (`both` by default) and merge; by-id tools default to `auto` and detect the resource, which costs one extra lookup — pass `service`/`project` to skip it. `cw_create_ticket` makes service tickets only: a project ticket needs a project and a phase.
+- A break inside a logged span goes in `hours_deduct`, with `time_end` left at the real end time. Passing a shortened `hours` instead makes ConnectWise render an end time that never happened.
 - Timestamps must have whole seconds — the server normalizes (ConnectWise rejects fractional seconds).
 - Time entries require an **open time report period** in ConnectWise for the entry date; the API's message is passed through when none exists.
 - `/system/myAccount` is missing on some on-prem versions — provide the member identifier explicitly (`CW_MEMBER_IDENTIFIER` or `x-cw-member-id`) for "my tickets"/"my time".

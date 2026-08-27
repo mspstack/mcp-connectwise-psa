@@ -84,7 +84,10 @@ export interface TimeEntry extends Record<string, unknown> {
   timeStart?: string;
   timeEnd?: string;
   actualHours?: number;
+  /** Break subtracted from the span: actualHours = (timeEnd − timeStart) − hoursDeduct. */
+  hoursDeduct?: number;
   billableOption?: string;
+  workRole?: Ref;
   workType?: Ref;
   notes?: string;
 }
@@ -93,6 +96,14 @@ export interface WorkRole extends Record<string, unknown> {
   id: number;
   name?: string;
   hourlyRate?: number;
+  inactiveFlag?: boolean;
+}
+
+export interface WorkType extends Record<string, unknown> {
+  id: number;
+  name?: string;
+  /** How the type bills: Billable, DoNotBill, NoCharge, NoDefault. */
+  billTime?: string;
   inactiveFlag?: boolean;
 }
 
