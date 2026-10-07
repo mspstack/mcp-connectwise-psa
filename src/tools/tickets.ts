@@ -8,7 +8,7 @@
 
 import { z } from "zod";
 import type { ToolRegistrar } from "./registrar.js";
-import { allOf, q, type CWClient } from "../cw/client.js";
+import { allOf, describeError, q, type CWClient } from "../cw/client.js";
 import type {
   Board,
   BoardStatus,
@@ -31,6 +31,13 @@ import {
   UNKNOWN_MEMBER_MESSAGE,
   type ToolResult,
 } from "./shared.js";
+import {
+  classificationFrom,
+  classificationRef,
+  CLASSIFICATION_FIELDS,
+  partitionBundleCandidates,
+  type NameOrId,
+} from "./ticket-classification.js";
 import {
   CHARGE_TO_TYPES,
   listAcrossKinds,
@@ -64,6 +71,15 @@ function ticketLine(t: Ticket): string {
   const assigned = t.resources || t.owner?.identifier;
   if (assigned) bits.push(`  assigned: ${assigned}`);
   return bits.join("\n");
+}
+
+const nameOrIdField = (what: string) =>
+  z.union([z.string(), z.number().int().positive()]).optional().describe(`${what} — name or id`);
+
+/** `{ field: {name|id} }` when given, `{}` when not — so a spread leaves it untouched. */
+function refOf(field: string, value: NameOrId | undefined): Record<string, unknown> {
+  const ref = classificationRef(value);
+  return ref ? { [field]: ref } : {};
 }
 
 /** Note which resources were skipped, so a partial answer never looks complete. */
@@ -292,6 +308,21 @@ export function registerTicketTools(reg: ToolRegistrar, client: CWClient): void 
           .string()
           .optional()
           .describe("Status name (board default when omitted; must exist on the board — see cw_get_board)"),
+        type: nameOrIdField("Type — board-scoped (see cw_get_board)"),
+        sub_type: nameOrIdField("Sub-type — board-scoped, under the type"),
+        item: nameOrIdField("Item — board-scoped, under the sub-type"),
+        team: nameOrIdField("Service team — board-scoped"),
+        source: nameOrIdField("Source (Phone, Email, Portal …)"),
+        contact_id: z.number().int().positive().optional().describe("Contact ID on the company"),
+        owner_identifier: z.string().optional().describe("Member identifier to set as owner"),
+        copy_classification_from: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe(
+            "Copy company, contact, type, subType, item, team, source and priority from this ticket (by id). Arguments given explicitly win"
+          ),
         response_format: responseFormatField,
       },
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
@@ -303,16 +334,42 @@ export function registerTicketTools(reg: ToolRegistrar, client: CWClient): void 
       initial_description?: string;
       priority?: string;
       status?: string;
+      type?: NameOrId;
+      sub_type?: NameOrId;
+      item?: NameOrId;
+      team?: NameOrId;
+      source?: NameOrId;
+      contact_id?: number;
+      owner_identifier?: string;
+      copy_classification_from?: number;
       response_format: "markdown" | "json";
     }) => {
       try {
+        // Copied fields are the base layer; anything passed explicitly overrides.
+        let copied: Partial<Record<string, { id: number }>> = {};
+        if (args.copy_classification_from !== undefined) {
+          const source = await client.getOne<Ticket>(
+            `/service/tickets/${args.copy_classification_from}`,
+            CLASSIFICATION_FIELDS
+          );
+          copied = classificationFrom(source);
+        }
+
         const ticket = await client.post<Ticket>("/service/tickets", {
           summary: args.summary,
+          ...copied,
           company: { id: args.company_id },
           board: { name: args.board },
           ...(args.initial_description ? { initialDescription: args.initial_description } : {}),
           ...(args.priority ? { priority: { name: args.priority } } : {}),
           ...(args.status ? { status: { name: args.status } } : {}),
+          ...refOf("type", args.type),
+          ...refOf("subType", args.sub_type),
+          ...refOf("item", args.item),
+          ...refOf("team", args.team),
+          ...refOf("source", args.source),
+          ...(args.contact_id !== undefined ? { contact: { id: args.contact_id } } : {}),
+          ...(args.owner_identifier ? { owner: { identifier: args.owner_identifier } } : {}),
         });
         if (args.response_format === "json") return text(json(ticket));
         return text(
@@ -336,6 +393,10 @@ export function registerTicketTools(reg: ToolRegistrar, client: CWClient): void 
         priority: z.string().optional().describe("New priority name"),
         summary: z.string().max(100).optional().describe("New summary"),
         owner_identifier: z.string().optional().describe("Member identifier to set as owner"),
+        type: nameOrIdField("Type — board-scoped (see cw_get_board)"),
+        sub_type: nameOrIdField("Sub-type — board-scoped, under the type"),
+        item: nameOrIdField("Item — board-scoped, under the sub-type"),
+        team: nameOrIdField("Service team — board-scoped"),
         ticket_type: ticketKindField,
         response_format: responseFormatField,
       },
@@ -347,6 +408,10 @@ export function registerTicketTools(reg: ToolRegistrar, client: CWClient): void 
       priority?: string;
       summary?: string;
       owner_identifier?: string;
+      type?: NameOrId;
+      sub_type?: NameOrId;
+      item?: NameOrId;
+      team?: NameOrId;
       ticket_type: TicketKindArg;
       response_format: "markdown" | "json";
     }) => {
@@ -357,6 +422,15 @@ export function registerTicketTools(reg: ToolRegistrar, client: CWClient): void 
         if (args.summary) ops.push({ op: "replace", path: "summary", value: args.summary });
         if (args.owner_identifier)
           ops.push({ op: "replace", path: "owner", value: { identifier: args.owner_identifier } });
+        for (const [path, value] of [
+          ["type", args.type],
+          ["subType", args.sub_type],
+          ["item", args.item],
+          ["team", args.team],
+        ] as const) {
+          const ref = classificationRef(value);
+          if (ref) ops.push({ op: "replace", path, value: ref });
+        }
         if (ops.length === 0) return text("Nothing to update — provide at least one field.");
 
         const kind = await resolveTicketKind(client, args.ticket_id, args.ticket_type);
@@ -365,6 +439,130 @@ export function registerTicketTools(reg: ToolRegistrar, client: CWClient): void 
         return text(
           `Ticket #${ticket.id} updated — status: ${ticket.status?.name ?? "?"}, priority: ${ticket.priority?.name ?? "—"}, owner: ${ticket.owner?.identifier ?? "—"}.`
         );
+      } catch (error) {
+        return failure(error);
+      }
+    }
+  );
+
+  reg.register(
+    {
+      name: "cw_bundle_tickets",
+      title: "Bundle ConnectWise Tickets Under a Parent",
+      description:
+        "Attach child tickets to a parent ticket (CW's bundling). SERVICE tickets only. Children that " +
+        "already have a parent are refused rather than re-parented, and every child is read back " +
+        "afterwards so the result says which ones actually attached. NOT UNDOABLE FROM HERE — detaching " +
+        "a bundled ticket is only possible in the ConnectWise UI, so check the ids before calling.",
+      inputSchema: {
+        parent_ticket_id: z.number().int().positive().describe("The ticket the children are bundled under"),
+        child_ticket_ids: z
+          .array(z.number().int().positive())
+          .min(1)
+          .max(50)
+          .describe("Tickets to attach to the parent"),
+        response_format: responseFormatField,
+      },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: true,
+      },
+    },
+    async (args: {
+      parent_ticket_id: number;
+      child_ticket_ids: number[];
+      response_format: "markdown" | "json";
+    }) => {
+      try {
+        // Bundling exists on the service resource only; a project ticket id here
+        // is a mistake worth naming rather than a 404 from CW.
+        const parentKind = await resolveTicketKind(client, args.parent_ticket_id);
+        if (parentKind !== "service") {
+          return text(
+            `Error: #${args.parent_ticket_id} is a project ticket — bundling applies to service tickets only.`
+          );
+        }
+
+        const candidates = await Promise.all(
+          args.child_ticket_ids.map(async (id) => {
+            try {
+              const child = await client.getOne<Ticket>(
+                `/service/tickets/${id}`,
+                "id,summary,parentTicketId"
+              );
+              return { id, parentTicketId: child.parentTicketId ?? null, summary: child.summary };
+            } catch (error) {
+              return { id, unreadable: describeError(error) };
+            }
+          })
+        );
+
+        const unreadable = candidates.filter((c) => "unreadable" in c) as Array<{
+          id: number;
+          unreadable: string;
+        }>;
+        const { eligible, rejected } = partitionBundleCandidates(
+          args.parent_ticket_id,
+          candidates.filter((c) => !("unreadable" in c)) as Array<{
+            id: number;
+            parentTicketId: number | null;
+          }>
+        );
+        const refusals = [
+          ...rejected,
+          ...unreadable.map((c) => ({ id: c.id, reason: `could not be read — ${c.unreadable}` })),
+        ];
+
+        if (eligible.length === 0) {
+          const lines = ["No tickets were bundled.", ""];
+          for (const r of refusals) lines.push(`- #${r.id}: ${r.reason}`);
+          return text(lines.join("\n"));
+        }
+
+        await client.post(`/service/tickets/${args.parent_ticket_id}/attachChildren`, {
+          childTicketIds: eligible,
+        });
+
+        // Read back rather than trust the call: CW reports success for the batch,
+        // not per child.
+        const verified: number[] = [];
+        const failed: Array<{ id: number; reason: string }> = [];
+        await Promise.all(
+          eligible.map(async (id) => {
+            try {
+              const child = await client.getOne<Ticket>(`/service/tickets/${id}`, "id,parentTicketId");
+              if (child.parentTicketId === args.parent_ticket_id) verified.push(id);
+              else
+                failed.push({
+                  id,
+                  reason: `parent is ${child.parentTicketId ?? "still unset"} after the call`,
+                });
+            } catch (error) {
+              failed.push({ id, reason: `could not verify — ${describeError(error)}` });
+            }
+          })
+        );
+
+        if (args.response_format === "json")
+          return text(json({ parent: args.parent_ticket_id, verified, failed, refused: refusals }));
+
+        const lines = [
+          `# Bundled under #${args.parent_ticket_id}`,
+          "",
+          `Attached and verified: ${verified.length ? verified.map((id) => `#${id}`).join(", ") : "none"}`,
+        ];
+        if (failed.length) {
+          lines.push("", "Did not attach:");
+          for (const f of failed) lines.push(`- #${f.id}: ${f.reason}`);
+        }
+        if (refusals.length) {
+          lines.push("", "Skipped before writing:");
+          for (const r of refusals) lines.push(`- #${r.id}: ${r.reason}`);
+        }
+        lines.push("", "_Detaching is only possible in the ConnectWise UI._");
+        return text(clip(lines.join("\n")));
       } catch (error) {
         return failure(error);
       }
@@ -461,10 +659,11 @@ export function registerTicketTools(reg: ToolRegistrar, client: CWClient): void 
   reg.register(
     {
       name: "cw_get_board",
-      title: "Get ConnectWise Board Statuses and Types",
+      title: "Get ConnectWise Board Statuses, Types, Sub-types, Items and Teams",
       description:
-        "List the statuses and types available on a service board — the exact names cw_update_ticket " +
-        "and cw_create_ticket require. Get the board id from cw_list_boards.",
+        "List what a service board allows — statuses, types, sub-types, items and teams. These are the " +
+        "exact names cw_create_ticket and cw_update_ticket take, and they are BOARD-SCOPED: the same " +
+        "name means a different id on another board. Get the board id from cw_list_boards.",
       inputSchema: {
         board_id: z.number().int().positive().describe("The board ID (from cw_list_boards)"),
         response_format: responseFormatField,
@@ -473,7 +672,18 @@ export function registerTicketTools(reg: ToolRegistrar, client: CWClient): void 
     },
     async (args: { board_id: number; response_format: "markdown" | "json" }) => {
       try {
-        const [statuses, types] = await Promise.all([
+        // Sub-types, items and teams are optional on a board (and a security role
+        // may refuse one), so a failure there must not lose the statuses.
+        const optional = async <T>(path: string, fields: string): Promise<T[]> => {
+          try {
+            const page = await client.getList<T>(path, { orderBy: "name asc", fields, pageSize: 200 });
+            return page.items;
+          } catch {
+            return [];
+          }
+        };
+
+        const [statuses, types, subTypes, items, teams] = await Promise.all([
           client.getList<BoardStatus>(`/service/boards/${args.board_id}/statuses`, {
             orderBy: "sortOrder asc",
             fields: "id,name,closedStatus,defaultFlag,inactive",
@@ -484,9 +694,24 @@ export function registerTicketTools(reg: ToolRegistrar, client: CWClient): void 
             fields: "id,name,defaultFlag,inactiveFlag",
             pageSize: 200,
           }),
+          optional<BoardType>(`/service/boards/${args.board_id}/subtypes`, "id,name,inactiveFlag"),
+          optional<BoardType>(`/service/boards/${args.board_id}/items`, "id,name,inactiveFlag"),
+          optional<BoardType>(`/service/boards/${args.board_id}/teams`, "id,name"),
         ]);
+
         if (args.response_format === "json")
-          return text(clip(json({ statuses: statuses.items, types: types.items })));
+          return text(
+            clip(
+              json({
+                statuses: statuses.items,
+                types: types.items,
+                subTypes,
+                items,
+                teams,
+              })
+            )
+          );
+
         const lines = [`# Board #${args.board_id}`, "", "## Statuses"];
         for (const s of statuses.items)
           if (!s.inactive)
@@ -494,7 +719,16 @@ export function registerTicketTools(reg: ToolRegistrar, client: CWClient): void 
         lines.push("", "## Types");
         for (const t of types.items)
           if (!t.inactiveFlag) lines.push(`- ${t.name}${t.defaultFlag ? " (default)" : ""}`);
-        return text(clip(lines.join("\n")));
+        for (const [heading, rows] of [
+          ["Sub-types", subTypes],
+          ["Items", items],
+          ["Teams", teams],
+        ] as const) {
+          if (rows.length === 0) continue;
+          lines.push("", `## ${heading}`);
+          for (const r of rows) if (!r.inactiveFlag) lines.push(`- ${r.name}`);
+        }
+        return text(clip(lines.join("\n"), "Ask for json format, or read one board at a time."));
       } catch (error) {
         return failure(error);
       }

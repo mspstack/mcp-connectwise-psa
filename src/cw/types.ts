@@ -16,6 +16,15 @@ export interface Ticket extends Record<string, unknown> {
   company?: Ref;
   contact?: Ref;
   owner?: Ref;
+  /** Board-scoped classification: type → subType → item. */
+  type?: Ref;
+  subType?: Ref;
+  item?: Ref;
+  team?: Ref;
+  source?: Ref;
+  /** Set when the ticket is bundled under another one. */
+  parentTicketId?: number | null;
+  hasChildTicket?: boolean;
   /** Comma-separated member identifiers assigned to the ticket. */
   resources?: string | null;
   closedFlag?: boolean;

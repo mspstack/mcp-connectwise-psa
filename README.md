@@ -88,7 +88,7 @@ Tools are grouped into **toolsets** so a session only sees the capabilities it n
 
 | Toolset key | Tools |
 |---|---|
-| `tickets` | `cw_search_tickets`, `cw_my_tickets`, `cw_get_ticket`, `cw_create_ticket`, `cw_update_ticket`, `cw_add_ticket_note`, `cw_list_boards`, `cw_get_board`, `cw_list_priorities`, `cw_list_ticket_time`, `cw_list_ticket_tasks` |
+| `tickets` | `cw_search_tickets`, `cw_my_tickets`, `cw_get_ticket`, `cw_create_ticket`, `cw_update_ticket`, `cw_add_ticket_note`, `cw_bundle_tickets`, `cw_list_boards`, `cw_get_board`, `cw_list_priorities`, `cw_list_ticket_time`, `cw_list_ticket_tasks` |
 | `time` | `cw_create_time_entry`, `cw_update_time_entry`, `cw_list_my_time`, `cw_list_work_roles`, `cw_list_work_types`, `cw_list_my_timesheets`, `cw_submit_timesheet` |
 | `companies` | `cw_search_companies`, `cw_get_company`, `cw_search_contacts`, `cw_get_contact`, `cw_list_company_sites` |
 | `configurations` | `cw_list_configurations`, `cw_get_configuration` |
