@@ -56,7 +56,8 @@ import {
 const TICKET_LIST_FIELDS =
   "id,summary,recordType,status/name,company/name,board/name,priority/name,owner/identifier,resources,dateEntered,_info/lastUpdated";
 const TICKET_DETAIL_FIELDS =
-  "id,summary,recordType,board/name,status/name,priority/name,company/name,company/id,contact/name,owner/identifier,resources,closedFlag,dateEntered";
+  "id,summary,recordType,board/name,status/name,priority/name,company/name,company/id,contact/name,contact/id," +
+  "type/name,subType/name,item/name,team/name,source/name,parentTicketId,owner/identifier,resources,closedFlag,dateEntered";
 const NOTE_FIELDS =
   "id,text,detailDescriptionFlag,internalAnalysisFlag,resolutionFlag,member/name,contact/name,createdBy,dateCreated";
 
@@ -276,6 +277,12 @@ export function registerTicketTools(reg: ToolRegistrar, client: CWClient): void 
           `- **Type**: ${ticket.recordType ?? (kind === "project" ? "ProjectTicket" : "ServiceTicket")}`,
           `- **Company**: ${ticket.company?.name ?? "?"} (ID: ${ticket.company?.id ?? "?"})`,
           `- **Board**: ${ticket.board?.name ?? "?"} | **Status**: ${ticket.status?.name ?? "?"} | **Priority**: ${ticket.priority?.name ?? "—"}`,
+          `- **Classification**: ${[ticket.type?.name, ticket.subType?.name, ticket.item?.name]
+            .filter(Boolean)
+            .join(" → ") || "—"}${ticket.team?.name ? ` | **Team**: ${ticket.team.name}` : ""}${
+            ticket.source?.name ? ` | **Source**: ${ticket.source.name}` : ""
+          }`,
+          ...(ticket.parentTicketId ? [`- **Bundled under**: #${ticket.parentTicketId}`] : []),
           `- **Contact**: ${ticket.contact?.name ?? "—"}`,
           `- **Assigned**: ${ticket.resources || ticket.owner?.identifier || "—"}`,
           `- **Opened**: ${ticket.dateEntered ?? "?"} | **Closed**: ${ticket.closedFlag ? "yes" : "no"}`,
